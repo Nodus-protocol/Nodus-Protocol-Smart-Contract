@@ -1,141 +1,8 @@
-# AMM Liquidity Pool Smart Contracts (ink!)
+# Nodus Protocol — AMM Liquidity Pool Smart Contracts
 
-Automated Market Maker (AMM) liquidity pool smart contracts written in **Rust** using the [**ink!**](https://use.ink/) framework. Deployable on Substrate-based blockchains with `pallet-contracts` or `pallet-revive`.
+Constant-product Automated Market Maker (AMM) smart contracts written in **Rust** using the [ink!](https://use.ink/) framework. Deployable on Substrate-based blockchains with `pallet-contracts` or `pallet-revive`.
 
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Repository Structure](#repository-structure)
-- [Core Contracts](#core-contracts)
-  - [LiquidityPool](#liquiditypool)
-  - [LPToken (PSP22)](#lptoken-psp22)
-  - [ReentrancyGuard](#reentrancyguard)
-- [Key Features](#key-features)
-- [Math & Invariants](#math--invariants)
-- [Security](#security)
-- [Build & Deploy](#build--deploy)
-- [Testing](#testing)
-- [Events & Indexing](#events--indexing)
-- [API Reference](#api-reference)
-- [License](#license)
-
----
-
-## Overview
-
-This repository contains the on-chain logic for a constant-product AMM DEX. It manages token reserves, liquidity provider shares, and atomic token swaps while enforcing strict mathematical invariants and security guarantees.
-
-**Chain Compatibility:** Substrate-based chains with Contracts pallet (e.g., Aleph Zero, Phala, Astar, Shiden)
-
-## Repository Structure
-
-amm-smart-contracts/
-├── src/
-│   ├── lib.rs                    # Contract entry point & module exports
-│   ├── liquidity_pool.rs         # Core pool logic (add/remove/swap)
-│   ├── lp_token.rs               # PSP22 LP token implementation
-│   ├── reentrancy_guard.rs       # Reentrancy protection pattern
-│   ├── math.rs                   # On-chain math helpers
-│   ├── events.rs                 # Event definitions (Mint, Burn, Swap)
-│   ├── errors.rs                 # Error enum types
-│   └── traits.rs                 # Interface definitions
-│
-├── tests/
-│   ├── unit_tests.rs             # Unit tests (100% coverage)
-│   ├── integration_tests.rs      # Cross-contract integration
-│   └── fuzz_tests.rs             # Extreme value fuzzing
-│
-├── scripts/
-│   ├── build.sh                  # Build optimized WASM
-│   ├── test.sh                   # Run full test suite
-│   └── deploy.sh                 # Deploy to local/testnet node
-│
-├── docs/
-│   ├── ARCHITECTURE.md           # Detailed architecture docs
-│   └── SECURITY.md               # Security audit notes & vectors
-│
-├── Cargo.toml                    # Workspace manifest
-├── rust-toolchain.toml           # Toolchain specification
-├── Makefile                      # Common commands
-├── README.md                     # This file
-└── .gitignore
-
-
-
----
-
-## Core Contracts
-
-### LiquidityPool
-
-The main contract holding token reserves and executing swaps.
-
-#### Storage
-
-```rust
-#[ink(storage)]
-pub struct LiquidityPool {
-    token_0: AccountId,           // First token address
-    token_1: AccountId,           // Second token address
-    reserve_0: Balance,           // Token 0 reserves
-    reserve_1: Balance,           // Token 1 reserves
-    block_timestamp_last: u64,    // Last update timestamp
-    price_0_cumulative_last: u128, // Cumulative price for TWAP
-    price_1_cumulative_last: u128, // Cumulative price for TWAP
-    k_last: u128,                 // Last invariant (for fee logic)
-    lp_token: AccountId,          // LP token contract address
-    locked: bool,                 // Reentrancy guard state
-}
-
-
-Execute Python code
-Search
-ink! smart contract 2026 latest version openbrush psp22 example 2026
-15 results
-Execute Python code
-Done. Here's your smart contract-only repo with a comprehensive README. You can copy-paste everything below to scaffold it:
-📁 Repo Structure
-plain
-Copy
-amm-smart-contracts/
-├── src/
-│   ├── lib.rs                    # Entry point
-│   ├── liquidity_pool.rs         # Core pool logic
-│   ├── lp_token.rs               # PSP22 LP token
-│   ├── reentrancy_guard.rs       # Mutex guard
-│   ├── math.rs                   # On-chain math
-│   ├── events.rs                 # Event definitions
-│   ├── errors.rs                 # Error enums
-│   └── traits.rs                 # Interfaces
-├── tests/
-│   ├── unit_tests.rs
-│   ├── integration_tests.rs
-│   └── fuzz_tests.rs
-├── scripts/
-│   ├── build.sh
-│   ├── test.sh
-│   └── deploy.sh
-├── docs/
-│   ├── ARCHITECTURE.md
-│   └── SECURITY.md
-├── Cargo.toml
-├── rust-toolchain.toml
-├── Makefile
-├── README.md
-├── LICENSE
-└── .gitignore
-📄 README.md
-Copy and save as README.md:
-Markdown
-Copy
-Code
-Preview
-# AMM Liquidity Pool Smart Contracts (ink!)
-
-Automated Market Maker (AMM) liquidity pool smart contracts written in **Rust** using the [**ink!**](https://use.ink/) framework. Deployable on Substrate-based blockchains with `pallet-contracts` or `pallet-revive`.
+**Chain Compatibility:** Substrate chains with the Contracts pallet — Aleph Zero, Phala, Astar, Shiden, and compatible networks.
 
 ---
 
@@ -149,11 +16,11 @@ Automated Market Maker (AMM) liquidity pool smart contracts written in **Rust** 
   - [LPToken (PSP22)](#lptoken-psp22)
   - [ReentrancyGuard](#reentrancyguard)
 - [Key Features](#key-features)
-- [Math & Invariants](#math--invariants)
+- [Math and Invariants](#math-and-invariants)
 - [Security](#security)
-- [Build & Deploy](#build--deploy)
+- [Build and Deploy](#build-and-deploy)
 - [Testing](#testing)
-- [Events & Indexing](#events--indexing)
+- [Events and Indexing](#events-and-indexing)
 - [API Reference](#api-reference)
 - [License](#license)
 
@@ -161,68 +28,88 @@ Automated Market Maker (AMM) liquidity pool smart contracts written in **Rust** 
 
 ## Overview
 
-This repository contains the on-chain logic for a constant-product AMM DEX. It manages token reserves, liquidity provider shares, and atomic token swaps while enforcing strict mathematical invariants and security guarantees.
+This repository contains the on-chain logic for Nodus Protocol's constant-product AMM DEX. It manages token reserves, liquidity provider shares, and atomic token swaps while enforcing strict mathematical invariants and security guarantees.
 
-**Chain Compatibility:** Substrate-based chains with Contracts pallet (e.g., Aleph Zero, Phala, Astar, Shiden)
+The protocol is modelled after the Uniswap V2 design and adapted for the ink! execution model on Substrate. Two cooperating contracts form the core:
+
+1. **LiquidityPool** — holds reserves, executes swaps, delegates LP token minting and burning.
+2. **LPToken** — a PSP22-compatible fungible token representing each provider's proportional share.
 
 ---
 
 ## Architecture
-┌─────────────────────────────────────────┐
-│           LiquidityPool                 │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐ │
-│  │ Reserve │  │ Reserve │  │   K     │ │
-│  │ Token 0 │  │ Token 1 │  │Invariant│ │
-│  └────┬────┘  └────┬────┘  └─────────┘ │
-│       │            │                    │
-│  ┌────▼────────────▼────┐              │
-│  │    LPToken (PSP22)   │              │
-│  │  LP Share Tracking   │              │
-│  └──────────────────────┘              │
-│       │                                │
-│  ┌────▼────────────────────┐           │
-│  │   ReentrancyGuard       │           │
-│  │   Mutex-style locking   │           │
-│  └─────────────────────────┘           │
-└─────────────────────────────────────────┘
-plain
-Copy
+
+```text
+┌───────────────────────────────────────────┐
+│              LiquidityPool                │
+│                                           │
+│  reserve_0 ──── reserve_1                 │
+│       \              /                    │
+│        k = x * y (invariant)              │
+│                                           │
+│  add_liquidity()  ─────────────────────── │──► LPToken.mint()
+│  remove_liquidity() ───────────────────── │──► LPToken.burn()
+│  swap()                                   │
+│  sync()   (drift correction)              │
+│                                           │
+│  price_0_cumulative_last (TWAP oracle)    │
+│  price_1_cumulative_last (TWAP oracle)    │
+└───────────────────────────────────────────┘
+                    │
+                    │ cross-contract calls
+                    ▼
+┌───────────────────────────────────────────┐
+│            LPToken (PSP22)                │
+│                                           │
+│  balances    Mapping<AccountId, u128>     │
+│  allowances  Mapping<(AccountId,          │
+│               AccountId), u128>           │
+│  total_supply: u128                       │
+│                                           │
+│  mint()  — pool contract only             │
+│  burn()  — pool contract only             │
+│  transfer(), transfer_from(), approve()   │
+└───────────────────────────────────────────┘
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed flow diagrams.
 
 ---
 
 ## Repository Structure
-amm-smart-contracts/
+
+```text
+nodus-protocol-smart-contract/
 ├── src/
-│   ├── lib.rs                    # Contract entry point & module exports
-│   ├── liquidity_pool.rs         # Core pool logic (add/remove/swap)
-│   ├── lp_token.rs               # PSP22 LP token implementation
-│   ├── reentrancy_guard.rs       # Reentrancy protection pattern
-│   ├── math.rs                   # On-chain math helpers
-│   ├── events.rs                 # Event definitions (Mint, Burn, Swap)
-│   ├── errors.rs                 # Error enum types
-│   └── traits.rs                 # Interface definitions
+│   ├── lib.rs                  # Crate root: module declarations and #[ink::contract] entry
+│   ├── liquidity_pool.rs       # Pure business logic: optimal amounts, K invariant, LP math
+│   ├── lp_token.rs             # Cross-contract call wrapper for the PSP22 LP token
+│   ├── reentrancy_guard.rs     # Mutex-style lock / unlock trait
+│   ├── math.rs                 # get_amount_out, get_amount_in, sqrt, fee constants
+│   ├── events.rs               # Mint, Burn, Swap, Sync event definitions
+│   ├── errors.rs               # Error enum covering all failure modes
+│   └── traits.rs               # ILiquidityPool and IPSP22 ink! trait definitions
 │
 ├── tests/
-│   ├── unit_tests.rs             # Unit tests (100% coverage)
-│   ├── integration_tests.rs      # Cross-contract integration
-│   └── fuzz_tests.rs             # Extreme value fuzzing
+│   ├── unit_tests.rs           # Unit tests for math and pool logic functions
+│   ├── integration_tests.rs    # End-to-end tests against a live substrate node
+│   └── fuzz_tests.rs           # Property-based fuzz tests using proptest
 │
 ├── scripts/
-│   ├── build.sh                  # Build optimized WASM
-│   ├── test.sh                   # Run full test suite
-│   └── deploy.sh                 # Deploy to local/testnet node
+│   ├── build.sh                # Build optimized WASM artifact
+│   ├── test.sh                 # Run full test suite
+│   └── deploy.sh               # Deploy to local node or testnet
 │
 ├── docs/
-│   ├── ARCHITECTURE.md           # Detailed architecture docs
-│   └── SECURITY.md               # Security audit notes & vectors
+│   ├── ARCHITECTURE.md         # Detailed flow diagrams and module breakdown
+│   └── SECURITY.md             # Threat model, mitigations, and audit checklist
 │
-├── Cargo.toml                    # Workspace manifest
-├── rust-toolchain.toml           # Toolchain specification
-├── Makefile                      # Common commands
-├── README.md                     # This file
+├── Cargo.toml                  # Package manifest and dependency declarations
+├── rust-toolchain.toml         # Pinned Rust toolchain with WASM target
+├── Makefile                    # Common development commands
+├── README.md                   # This file
 └── .gitignore
-plain
-Copy
+```
 
 ---
 
@@ -230,316 +117,460 @@ Copy
 
 ### LiquidityPool
 
-The main contract holding token reserves and executing swaps.
+The main contract. It holds reserves for both tokens, executes swaps, and coordinates LP token issuance through cross-contract calls.
 
 #### Storage
 
 ```rust
 #[ink(storage)]
 pub struct LiquidityPool {
-    token_0: AccountId,           // First token address
-    token_1: AccountId,           // Second token address
-    reserve_0: Balance,           // Token 0 reserves
-    reserve_1: Balance,           // Token 1 reserves
-    block_timestamp_last: u64,    // Last update timestamp
-    price_0_cumulative_last: u128, // Cumulative price for TWAP
-    price_1_cumulative_last: u128, // Cumulative price for TWAP
-    k_last: u128,                 // Last invariant (for fee logic)
-    lp_token: AccountId,          // LP token contract address
-    locked: bool,                 // Reentrancy guard state
+    token_0: AccountId,               // First token contract address
+    token_1: AccountId,               // Second token contract address
+    reserve_0: u128,                  // Tracked reserve for token_0
+    reserve_1: u128,                  // Tracked reserve for token_1
+    block_timestamp_last: u64,        // Timestamp of last reserve update
+    price_0_cumulative_last: u128,    // Cumulative price for TWAP oracle
+    price_1_cumulative_last: u128,    // Cumulative price for TWAP oracle
+    k_last: u128,                     // Last K value (reserved for protocol fee)
+    lp_token: AccountId,              // LP token contract address
+    locked: bool,                     // Reentrancy guard state
 }
-Messages
-Table
-Message	Description	Access
-add_liquidity	Deposit token pair, mint LP tokens	External
-remove_liquidity	Burn LP tokens, withdraw pair	External
-swap	Execute token swap with invariant check	External
-sync	Sync reserves with actual balances	External
-skim	Recover excess tokens	External
-get_reserves	Read current reserves	Read-only
-get_amount_out	Preview swap output	Read-only
-get_amount_in	Preview swap input required	Read-only
+```
 
-Add Liquidity Flow
-1. Validate token pair & amounts
-2. Calculate optimal amounts based on existing reserves
-3. Transfer tokens from caller to pool
-4. Mint LP tokens = min(amount0/reserve0, amount1/reserve1) * total_supply
-5. Update reserves
-6. Emit Mint event
-7. Emit Sync event
+#### Messages
 
-1. Validate output amounts requested
-2. Calculate required input using constant-product formula
-3. Transfer output tokens to recipient
-4. Verify invariant: (reserve0 + amount0_in) * (reserve1 + amount1_in) >= reserve0 * reserve1
-5. Update reserves
-6. Emit Swap event
-7. Emit Sync event
+| Message | Description | Mutates State |
+| --- | --- | --- |
+| `add_liquidity` | Deposit token pair, receive LP tokens | Yes |
+| `remove_liquidity` | Burn LP tokens, withdraw token pair | Yes |
+| `swap` | Execute a token swap with invariant check | Yes |
+| `sync` | Reconcile tracked reserves with actual balances | Yes |
+| `get_reserves` | Read current reserves and last timestamp | No |
+| `get_amount_out` | Preview the output for a given input amount | No |
+| `get_amount_in` | Preview the input required for a desired output | No |
 
-LPToken (PSP22)
-Standard PSP22 token representing liquidity provider shares.
-rust
-Copy
+#### Add Liquidity Flow
+
+1. Validate deadline has not passed.
+2. If first deposit, accept desired amounts directly and burn `MINIMUM_LIQUIDITY` to the zero address.
+3. Otherwise, calculate the optimal deposit amounts that preserve the current reserve ratio.
+4. Transfer tokens from caller to the pool via `PSP22::transfer_from`.
+5. Mint LP tokens: `min(amount_0 / reserve_0, amount_1 / reserve_1) * total_supply`.
+6. Update reserves and TWAP accumulators.
+7. Emit `Mint` and `Sync` events.
+
+#### Swap Flow
+
+1. Validate at least one output amount is non-zero and within available reserves.
+2. Optimistically transfer output tokens to the recipient.
+3. Read the new on-chain balances to derive the actual input amounts.
+4. Verify the fee-adjusted K invariant: `(b0*1000 - in0*3) * (b1*1000 - in1*3) >= reserve_0 * reserve_1 * 1_000_000`.
+5. Update reserves and TWAP accumulators.
+6. Emit `Swap` and `Sync` events.
+
+---
+
+### LPToken (PSP22)
+
+A standard PSP22 token representing a liquidity provider's proportional share of the pool reserves. The pool contract is the sole authorized minter and burner.
+
+```rust
 #[openbrush::contract]
 pub mod lp_token {
     #[ink(storage)]
     pub struct LPToken {
         #[storage_field]
         psp22: PSP22Data,
+        pool: AccountId,     // Authorized minter/burner
         name: String,
         symbol: String,
         decimals: u8,
     }
-    
+
     impl PSP22 for LPToken {}
     impl PSP22Metadata for LPToken {}
-    impl PSP22Mintable for LPToken {}  // Only callable by pool
-    impl PSP22Burnable for LPToken {}  // Only callable by pool
+    impl PSP22Mintable for LPToken {}   // Restricted to pool AccountId
+    impl PSP22Burnable for LPToken {}   // Restricted to pool AccountId
 }
-ReentrancyGuard
-Manual mutex-style reentrancy protection (no nonReentrant modifier in ink!):
-rust
-Copy
+```
+
+---
+
+### ReentrancyGuard
+
+A mutex-style reentrancy protection pattern implemented as a Rust trait over the pool's `locked: bool` storage field.
+
+```rust
 pub trait ReentrancyGuard {
-    fn _lock(&mut self) -> Result<(), Error>;
-    fn _unlock(&mut self);
-}
+    fn is_locked(&self) -> bool;
+    fn set_locked(&mut self, locked: bool);
 
-// Usage in every state-changing message:
-fn add_liquidity(&mut self, ...) -> Result<<...> {
-    self._lock()?;
-    // ... logic ...
-    self._unlock();
-    Ok(...)
+    fn lock(&mut self) -> Result<(), Error> {
+        if self.is_locked() {
+            return Err(Error::ReentrancyDetected);
+        }
+        self.set_locked(true);
+        Ok(())
+    }
+
+    fn unlock(&mut self) {
+        self.set_locked(false);
+    }
 }
-Key Features
-Constant-Product Invariant
-x×y=k 
-Where x  and y  are token reserves, k  is the invariant. After every swap:
-(x+Δx)×(y−Δy)≥x×y 
-Fee Structure
-Swap Fee: 0.3% (30 basis points)
-Fee stays in reserves, implicitly accruing to LPs
-Fee numerator: 3, denominator: 1000
-Minimum Liquidity Lock
-On first mint, MINIMUM_LIQUIDITY (1000 wei) is permanently locked to prevent division-by-zero exploits and ensure minimum share granularity.
-TWAP (Time-Weighted Average Price)
-Cumulative price tracking for oracle functionality:
-rust
-Copy
-price_cumulative += (reserve_other / reserve_this) * time_elapsed
-Math & Invariants
-Swap Output Formula
-plain
-Copy
+```
+
+Every state-changing message acquires the lock at entry and releases it before returning, preventing any reentrant call from proceeding.
+
+---
+
+## Key Features
+
+### Constant-Product Invariant
+
+```
+x * y = k
+```
+
+Where `x` and `y` are token reserves and `k` is the invariant. After every swap, `k` must not decrease (fees cause it to grow slightly):
+
+```
+(x + dx) * (y - dy) >= x * y
+```
+
+### Fee Structure
+
+- Swap fee: **0.3%** (30 basis points).
+- The fee multiplier applied to input amounts is `997 / 1000`.
+- Fees remain inside the reserves; they accrue to LP token holders proportionally when they withdraw.
+
+### Minimum Liquidity Lock
+
+On the first deposit, `MINIMUM_LIQUIDITY` (1,000 wei) of LP tokens is permanently minted to the zero address. This prevents the pool from being fully drained, avoids division-by-zero in LP calculations, and sets a minimum floor on the pool's value.
+
+### TWAP Oracle
+
+Cumulative price accumulators track the time-weighted average price for both tokens:
+
+```rust
+price_0_cumulative += (reserve_1 / reserve_0) * time_elapsed
+price_1_cumulative += (reserve_0 / reserve_1) * time_elapsed
+```
+
+An off-chain service or on-chain consumer reads these accumulators at two points in time and computes the TWAP over that window, which is resistant to single-block price manipulation.
+
+---
+
+## Math and Invariants
+
+### Swap Output Formula
+
+```
 amount_out = (reserve_out * amount_in * 997) / (reserve_in * 1000 + amount_in * 997)
-Swap Input Formula
-plain
-Copy
-amount_in = (reserve_in * amount_out * 1000) / ((reserve_out - amount_out) * 997) + 1
-LP Token Minting
-plain
-Copy
-liquidity = min(
-    (amount0 * total_supply) / reserve0,
-    (amount1 * total_supply) / reserve1
-)
-LP Token Burning
-plain
-Copy
-amount0 = (liquidity * reserve0) / total_supply
-amount1 = (liquidity * reserve1) / total_supply
-Security
-Table
-Attack Vector	Mitigation
-Reentrancy	Manual locked boolean guard + CEI pattern
-Flash Loans	No external callbacks during swap. Atomic execution.
-Rounding Exploits	Ceiling division on LP minting. Floor on burning.
-First Deposit Attack	MINIMUM_LIQUIDITY permanently locked
-Integer Overflow	checked_* arithmetic with explicit error handling
-Front-running	Minimum output / maximum input enforced
-Re-orgs	Events include block context for indexer validation
-Price Manipulation	TWAP resistant to single-block manipulation
-See docs/SECURITY.md for detailed audit notes.
-Build & Deploy
-Prerequisites
-Rust 1.70+ with wasm32-unknown-unknown target
-cargo-contract CLI tool
-Local Substrate node (e.g., substrate-contracts-node)
-Install
-bash
-Copy
-# Install ink! CLI
-cargo install cargo-contract
+```
 
-# Add WASM target
+### Swap Input Formula
+
+```
+amount_in = (reserve_in * amount_out * 1000) / ((reserve_out - amount_out) * 997) + 1
+```
+
+The `+ 1` ensures the output will be met after rounding.
+
+### LP Token Minting (subsequent deposits)
+
+```
+liquidity = min(
+    (amount_0 * total_supply) / reserve_0,
+    (amount_1 * total_supply) / reserve_1
+)
+```
+
+### LP Token Minting (initial deposit)
+
+```
+liquidity = sqrt(amount_0 * amount_1) - MINIMUM_LIQUIDITY
+```
+
+### LP Token Burning
+
+```
+amount_0 = (liquidity * reserve_0) / total_supply
+amount_1 = (liquidity * reserve_1) / total_supply
+```
+
+---
+
+## Security
+
+| Attack Vector | Mitigation |
+| --- | --- |
+| Reentrancy | `locked` boolean guard on every state-changing message; CEI pattern |
+| Integer overflow | `checked_*` arithmetic throughout; errors propagate as `Error::Overflow` |
+| First-deposit manipulation | `MINIMUM_LIQUIDITY` permanently burned to the zero address |
+| Rounding exploit | Floor division on LP minting; ceiling division on input calculation |
+| K invariant bypass | On-chain balance verification after every swap; fee-adjusted K check |
+| Flash price manipulation | TWAP accumulators use pre-block reserve snapshots |
+| Front-running | Slippage parameters (`amount_X_min`) enforced on all liquidity operations |
+| Deadline expiry | `deadline: u64` parameter rejects stale transactions |
+| Unauthorized mint/burn | LP token restricts mint and burn to the pool's `AccountId` |
+
+See [docs/SECURITY.md](docs/SECURITY.md) for the full threat model and audit checklist.
+
+---
+
+## Build and Deploy
+
+### Prerequisites
+
+- Rust with the `wasm32-unknown-unknown` target
+- `cargo-contract` CLI
+- A local Substrate node for development (e.g., `substrate-contracts-node`)
+
+### Install Tools
+
+```bash
+# Install the ink! contract build tool
+cargo install cargo-contract --locked
+
+# Add the WASM compilation target
 rustup target add wasm32-unknown-unknown
-Build
-bash
-Copy
-# Standard build
+```
+
+### Build
+
+```bash
+# Standard debug build
 cargo contract build
 
-# Optimized release build
+# Optimized release build (smaller WASM, suitable for deployment)
 cargo contract build --release
 
-# Output: target/ink/amm_liquidity_pool.contract (WASM + metadata)
-Deploy Local
-bash
-Copy
-# Start local node
+# Output: target/ink/amm_liquidity_pool.contract
+```
+
+### Deploy to a Local Node
+
+```bash
+# Terminal 1 — start a local development node
 substrate-contracts-node --dev --tmp
 
-# Deploy (in another terminal)
+# Terminal 2 — upload and instantiate the contract
 cargo contract upload --suri //Alice
-cargo contract instantiate --suri //Alice --args <token0> <token1>
-Deploy Testnet
-bash
-Copy
-cargo contract upload --url wss://ws.test.azero.dev --suri //Alice
-cargo contract instantiate --url wss://ws.test.azero.dev --suri //Alice --args <token0> <token1>
-Testing
-Unit Tests
-bash
-Copy
+cargo contract instantiate \
+    --suri //Alice \
+    --constructor new \
+    --args <token_0_address> <token_1_address> <lp_token_address>
+```
+
+### Deploy to Testnet
+
+```bash
+export SURI="your secret phrase"
+export TOKEN_0="<token_0_address>"
+export TOKEN_1="<token_1_address>"
+export LP_TOKEN="<lp_token_address>"
+
+bash scripts/deploy.sh testnet
+```
+
+---
+
+## Testing
+
+### Unit Tests
+
+```bash
 # Run all unit tests
 cargo test
 
-# With output
+# With printed output
 cargo test -- --nocapture
 
-# Specific module
-cargo test liquidity_pool
-Integration Tests
-bash
-Copy
-# End-to-end tests (requires running node)
+# Run a specific module
+cargo test math_tests
+cargo test liquidity_pool_tests
+```
+
+### Integration Tests
+
+Integration tests require a running `substrate-contracts-node`:
+
+```bash
+# End-to-end tests against a live node
 cargo test --features e2e-tests
+```
 
-# Or use ink! off-chain environment
-cargo test --features ink-test
-Fuzz Tests
-bash
-Copy
-# Extreme value testing
+### Fuzz Tests
+
+Property-based tests verify invariants across thousands of randomized inputs:
+
+```bash
 cargo test --features fuzzing
+```
 
-# Proptest for invariant preservation
-# Tests: near-zero liquidity, massive trades, decimal edge cases
-Coverage
-bash
-Copy
-# Install tarpaulin
+Properties tested:
+- Output amount is always less than the output reserve.
+- K invariant never decreases after a swap.
+- `get_amount_in` / `get_amount_out` are consistent (roundtrip).
+- Withdrawal amounts are always proportional and within reserves.
+- `sqrt` is monotonically non-decreasing.
+
+### Coverage
+
+```bash
+# Install coverage tool
 cargo install cargo-tarpaulin
 
-# Generate coverage report
+# Generate HTML report
 cargo tarpaulin --out Html
 
-# Open: tarpaulin-report.html
-Events & Indexing
-All state changes emit structured events for backend indexing:
-Mint Event
-rust
-Copy
+# Open tarpaulin-report.html in a browser
+```
+
+---
+
+## Events and Indexing
+
+All state-changing operations emit structured events for off-chain indexing.
+
+### Mint
+
+Emitted when liquidity is added.
+
+```rust
 #[ink::event]
 pub struct Mint {
     #[ink(topic)]
     pub sender: AccountId,
-    pub amount_0: Balance,
-    pub amount_1: Balance,
+    pub amount_0: u128,
+    pub amount_1: u128,
 }
-Burn Event
-rust
-Copy
+```
+
+### Burn
+
+Emitted when liquidity is removed.
+
+```rust
 #[ink::event]
 pub struct Burn {
     #[ink(topic)]
     pub sender: AccountId,
-    pub amount_0: Balance,
-    pub amount_1: Balance,
+    pub amount_0: u128,
+    pub amount_1: u128,
     #[ink(topic)]
     pub to: AccountId,
 }
-Swap Event
-rust
-Copy
+```
+
+### Swap
+
+Emitted on every token swap.
+
+```rust
 #[ink::event]
 pub struct Swap {
     #[ink(topic)]
     pub sender: AccountId,
-    pub amount_0_in: Balance,
-    pub amount_1_in: Balance,
-    pub amount_0_out: Balance,
-    pub amount_1_out: Balance,
+    pub amount_0_in: u128,
+    pub amount_1_in: u128,
+    pub amount_0_out: u128,
+    pub amount_1_out: u128,
     #[ink(topic)]
     pub to: AccountId,
 }
-Sync Event
-rust
-Copy
+```
+
+### Sync
+
+Emitted whenever reserves are updated.
+
+```rust
 #[ink::event]
 pub struct Sync {
-    pub reserve_0: Balance,
-    pub reserve_1: Balance,
+    pub reserve_0: u128,
+    pub reserve_1: u128,
 }
-Backend Integration: Events are indexed by the Go backend service to track historical volume, TVL, and price data.
-API Reference
-Constructor
-rust
-Copy
+```
+
+Events are indexed by a backend service to track historical swap volume, total value locked (TVL), and price history.
+
+---
+
+## API Reference
+
+### Constructor
+
+```rust
 #[ink(constructor)]
-pub fn new(token_0: AccountId, token_1: AccountId) -> Self
-Messages
-rust
-Copy
-// Add liquidity
+pub fn new(token_0: AccountId, token_1: AccountId, lp_token: AccountId) -> Self
+```
+
+### Messages
+
+```rust
+// Add liquidity to the pool
 #[ink(message)]
 pub fn add_liquidity(
     &mut self,
-    amount_0_desired: Balance,
-    amount_1_desired: Balance,
-    amount_0_min: Balance,
-    amount_1_min: Balance,
+    amount_0_desired: u128,
+    amount_1_desired: u128,
+    amount_0_min: u128,
+    amount_1_min: u128,
     to: AccountId,
     deadline: u64,
-) -> Result<<Balance, Error>
+) -> Result<u128, Error>
 
-// Remove liquidity
+// Remove liquidity from the pool
 #[ink(message)]
 pub fn remove_liquidity(
     &mut self,
-    liquidity: Balance,
-    amount_0_min: Balance,
-    amount_1_min: Balance,
+    liquidity: u128,
+    amount_0_min: u128,
+    amount_1_min: u128,
     to: AccountId,
     deadline: u64,
-) -> Result<(Balance, Balance), Error>
+) -> Result<(u128, u128), Error>
 
-// Swap tokens
+// Execute a token swap
 #[ink(message)]
 pub fn swap(
     &mut self,
-    amount_0_out: Balance,
-    amount_1_out: Balance,
+    amount_0_out: u128,
+    amount_1_out: u128,
     to: AccountId,
-    data: Vec<u8>,
 ) -> Result<(), Error>
 
-// Read reserves
+// Synchronise tracked reserves with actual on-chain balances
 #[ink(message)]
-pub fn get_reserves(&self) -> (Balance, Balance, u64)
+pub fn sync(&mut self) -> Result<(), Error>
 
-// Preview swap output
+// Read current reserves and last update timestamp
 #[ink(message)]
-pub fn get_amount_out(&self, amount_in: Balance, reserve_in: Balance, reserve_out: Balance) -> Balance
+pub fn get_reserves(&self) -> (u128, u128, u64)
 
-// Preview swap input
+// Preview output amount for a given input
 #[ink(message)]
-pub fn get_amount_in(&self, amount_out: Balance, reserve_in: Balance, reserve_out: Balance) -> Balance
-Error Types
-rust
-Copy
+pub fn get_amount_out(
+    &self,
+    amount_in: u128,
+    reserve_in: u128,
+    reserve_out: u128,
+) -> Result<u128, Error>
+
+// Preview input amount required for a desired output
+#[ink(message)]
+pub fn get_amount_in(
+    &self,
+    amount_out: u128,
+    reserve_in: u128,
+    reserve_out: u128,
+) -> Result<u128, Error>
+```
+
+### Error Types
+
+```rust
 pub enum Error {
     InsufficientLiquidity,
     InsufficientLiquidityMinted,
@@ -554,201 +585,36 @@ pub enum Error {
     ZeroAmount,
     Overflow,
 }
-Scripts
-Quick Commands
-bash
-Copy
-# Build everything
-make build
-
-# Run tests
-make test
-
-# Run with coverage
-make coverage
-
-# Deploy locally
-make deploy-local
-
-# Deploy to testnet
-make deploy-testnet
-
-# Lint
-make lint
-
-# Format code
-make format
-
-# Clean artifacts
-make clean
-License
-MIT License - See LICENSE for details.
-Contributing
-Fork the repository
-Create a feature branch: git checkout -b feature/amazing-feature
-Commit changes: git commit -m 'Add amazing feature'
-Push to branch: git push origin feature/amazing-feature
-Open a Pull Request
-Requirements:
-All tests must pass (cargo test)
-100% unit test coverage for math logic
-Clippy linting must pass (cargo clippy -- -D warnings)
-Security review required for state-changing code
-Resources
-ink! Documentation
-OpenBrush Contracts
-Substrate Contracts Node
-Aleph Zero Testnet
-PSP22 Standard
-plain
-Copy
+```
 
 ---
 
-## 📦 Config Files
+## Contributing
 
-**`Cargo.toml`:**
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b feature/your-feature`.
+3. Commit your changes: `git commit -m 'Add your feature'`.
+4. Push to the branch: `git push origin feature/your-feature`.
+5. Open a pull request.
 
-```toml
-[package]
-name = "amm-liquidity-pool"
-version = "0.1.0"
-authors = ["AMM Platform Team"]
-edition = "2021"
-license = "MIT"
-description = "Constant-product AMM liquidity pool smart contract in ink!"
-repository = "https://github.com/your-org/amm-smart-contracts"
+Requirements:
+- All tests must pass (`cargo test`).
+- Unit test coverage for all math logic must be maintained.
+- Clippy linting must pass with no warnings: `cargo clippy -- -D warnings`.
+- Security review is required for any change to state-mutating messages.
 
-[dependencies]
-ink = { version = "5.0.0", default-features = false }
-scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
-scale-info = { version = "2.6", default-features = false, features = ["derive"], optional = true }
-openbrush = { git = "https://github.com/Brushfam/openbrush-contracts", tag = "v4.0.0", default-features = false, features = ["psp22"] }
-primitive-types = { version = "0.12", default-features = false }
+---
 
-[dev-dependencies]
-ink_e2e = { version = "5.0.0" }
-proptest = { version = "1.4" }
+## Resources
 
-[lib]
-name = "amm_liquidity_pool"
-path = "src/lib.rs"
-crate-type = ["cdylib"]
+- [ink! Documentation](https://use.ink/)
+- [OpenBrush Contracts](https://github.com/Brushfam/openbrush-contracts)
+- [Substrate Contracts Node](https://github.com/paritytech/substrate-contracts-node)
+- [PSP22 Token Standard](https://github.com/w3f/PSPs/blob/master/PSPs/psp-22.md)
+- [Aleph Zero Testnet](https://test.azero.dev/)
 
-[features]
-default = ["std"]
-std = [
-    "ink/std",
-    "scale/std",
-    "scale-info/std",
-    "openbrush/std",
-    "primitive-types/std",
-]
-ink-as-dependency = []
-e2e-tests = []
-fuzzing = []
+---
 
-[profile.release]
-overflow-checks = false
-panic = "abort"
-lto = true
-codegen-units = 1
-opt-level = "z"
-strip = true
-rust-toolchain.toml:
-toml
-Copy
-[toolchain]
-channel = "stable"
-components = ["rustfmt", "clippy", "rust-src"]
-targets = ["wasm32-unknown-unknown"]
-profile = "minimal"
-Makefile:
-makefile
-Copy
-.PHONY: build test coverage deploy-local deploy-testnet lint format clean help
+## License
 
-help: ## Show this help message
-	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
-
-build: ## Build optimized WASM contract
-	@echo "🔨 Building contract..."
-	cargo contract build --release
-	@echo "✅ Build complete: target/ink/amm_liquidity_pool.contract"
-
-test: ## Run all tests
-	@echo "🧪 Running unit tests..."
-	cargo test
-	@echo "🧪 Running integration tests..."
-	cargo test --features e2e-tests
-	@echo "✅ All tests passed"
-
-coverage: ## Generate test coverage report
-	@echo "📊 Generating coverage report..."
-	cargo tarpaulin --out Html
-	@echo "✅ Report: tarpaulin-report.html"
-
-lint: ## Run clippy and rustfmt
-	@echo "🔍 Running clippy..."
-	cargo clippy -- -D warnings
-	@echo "🔍 Checking formatting..."
-	cargo fmt -- --check
-	@echo "✅ Linting complete"
-
-format: ## Format all code
-	cargo fmt
-
-clean: ## Clean build artifacts
-	cargo clean
-	rm -rf target/
-	@echo "🧹 Cleaned build artifacts"
-
-deploy-local: ## Deploy to local substrate-contracts-node
-	@echo "🚀 Deploying to local node..."
-	cargo contract upload --suri //Alice
-	cargo contract instantiate --suri //Alice --args <token0> <token1>
-	@echo "✅ Deployed to local node"
-
-deploy-testnet: ## Deploy to Aleph Zero testnet
-	@echo "🚀 Deploying to testnet..."
-	cargo contract upload --url wss://ws.test.azero.dev --suri //Alice
-	cargo contract instantiate --url wss://ws.test.azero.dev --suri //Alice --args <token0> <token1>
-	@echo "✅ Deployed to testnet"
-
-node: ## Start local development node
-	@echo "🌐 Starting substrate-contracts-node..."
-	substrate-contracts-node --dev --tmp
-.gitignore:
-gitignore
-Copy
-# Rust
-target/
-Cargo.lock
-**/*.rs.bk
-*.pdb
-
-# ink! contract artifacts
-*.contract
-*.wasm
-*.json
-.metadata/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
-
-# Coverage
-tarpaulin-report.html
-*.profraw
+MIT License — see [LICENSE](LICENSE) for details.

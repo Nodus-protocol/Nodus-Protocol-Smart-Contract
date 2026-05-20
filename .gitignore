@@ -1,0 +1,30 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# ink! contract artifacts
+*.contract
+*.wasm
+*.json
+.metadata/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Coverage
+tarpaulin-report.html
+*.profraw
