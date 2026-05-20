@@ -137,7 +137,7 @@ pub struct LiquidityPool {
 }
 ```
 
-#### Messages
+#### Available Messages
 
 | Message | Description | Mutates State |
 | --- | --- | --- |
@@ -227,13 +227,13 @@ Every state-changing message acquires the lock at entry and releases it before r
 
 ### Constant-Product Invariant
 
-```
+```text
 x * y = k
 ```
 
 Where `x` and `y` are token reserves and `k` is the invariant. After every swap, `k` must not decrease (fees cause it to grow slightly):
 
-```
+```text
 (x + dx) * (y - dy) >= x * y
 ```
 
@@ -264,13 +264,13 @@ An off-chain service or on-chain consumer reads these accumulators at two points
 
 ### Swap Output Formula
 
-```
+```text
 amount_out = (reserve_out * amount_in * 997) / (reserve_in * 1000 + amount_in * 997)
 ```
 
 ### Swap Input Formula
 
-```
+```text
 amount_in = (reserve_in * amount_out * 1000) / ((reserve_out - amount_out) * 997) + 1
 ```
 
@@ -278,7 +278,7 @@ The `+ 1` ensures the output will be met after rounding.
 
 ### LP Token Minting (subsequent deposits)
 
-```
+```text
 liquidity = min(
     (amount_0 * total_supply) / reserve_0,
     (amount_1 * total_supply) / reserve_1
@@ -287,13 +287,13 @@ liquidity = min(
 
 ### LP Token Minting (initial deposit)
 
-```
+```text
 liquidity = sqrt(amount_0 * amount_1) - MINIMUM_LIQUIDITY
 ```
 
 ### LP Token Burning
 
-```
+```text
 amount_0 = (liquidity * reserve_0) / total_supply
 amount_1 = (liquidity * reserve_1) / total_supply
 ```
@@ -409,6 +409,7 @@ cargo test --features fuzzing
 ```
 
 Properties tested:
+
 - Output amount is always less than the output reserve.
 - K invariant never decreases after a swap.
 - `get_amount_in` / `get_amount_out` are consistent (roundtrip).
@@ -506,7 +507,7 @@ Events are indexed by a backend service to track historical swap volume, total v
 pub fn new(token_0: AccountId, token_1: AccountId, lp_token: AccountId) -> Self
 ```
 
-### Messages
+### Message Signatures
 
 ```rust
 // Add liquidity to the pool
@@ -597,7 +598,8 @@ pub enum Error {
 4. Push to the branch: `git push origin feature/your-feature`.
 5. Open a pull request.
 
-Requirements:
+### Requirements
+
 - All tests must pass (`cargo test`).
 - Unit test coverage for all math logic must be maintained.
 - Clippy linting must pass with no warnings: `cargo clippy -- -D warnings`.
