@@ -1,7 +1,7 @@
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod integration {
-    use soroban_sdk::{testutils::Address as _, Address, Env};
+    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env};
     use nodus_amm::{NodusAmm, NodusAmmClient};
 
     fn setup_initialized() -> (Env, Address, Address, Address) {
@@ -24,7 +24,7 @@ mod integration {
     }
 
     #[test]
-    fn swap_zero_output_both_rejected() {
+    fn swap_zero_output_rejected() {
         let (env, contract, _, _) = setup_initialized();
         let client = NodusAmmClient::new(&env, &contract);
         let to = Address::generate(&env);
@@ -32,11 +32,10 @@ mod integration {
     }
 
     #[test]
-    fn lp_balance_of_starts_zero() {
+    fn lp_balance_starts_zero() {
         let (env, contract, _, _) = setup_initialized();
         let client = NodusAmmClient::new(&env, &contract);
-        let user = Address::generate(&env);
-        assert_eq!(client.lp_balance_of(&user), 0);
+        assert_eq!(client.lp_balance_of(&Address::generate(&env)), 0);
     }
 
     #[test]
@@ -58,11 +57,19 @@ mod integration {
     fn expired_remove_liquidity_rejected() {
         let (env, contract, _, _) = setup_initialized();
         let client = NodusAmmClient::new(&env, &contract);
-        let mut info = env.ledger().get();
-        info.timestamp = 5_000;
-        env.ledger().set(info);
+        env.ledger().set_timestamp(5_000);
         let from = Address::generate(&env);
         let to = Address::generate(&env);
         assert!(client.try_remove_liquidity(&from, &to, &100, &0, &0, &1_000).is_err());
+    }
+
+    #[test]
+    fn not_initialized_token_query_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register_contract(None, NodusAmm);
+        let client = NodusAmmClient::new(&env, &contract);
+        assert!(client.try_token_0().is_err());
+        assert!(client.try_token_1().is_err());
     }
 }
