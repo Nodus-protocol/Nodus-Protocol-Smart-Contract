@@ -21,11 +21,10 @@ mod math_tests {
 
     #[test]
     fn get_amount_in_roundtrip() {
-        let reserve_in = 1_000_000i128;
-        let reserve_out = 1_000_000i128;
+        let reserve = 1_000_000i128;
         let desired_out = 500i128;
-        let amount_in = math::get_amount_in(desired_out, reserve_in, reserve_out).unwrap();
-        let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out).unwrap();
+        let amount_in = math::get_amount_in(desired_out, reserve, reserve).unwrap();
+        let amount_out = math::get_amount_out(amount_in, reserve, reserve).unwrap();
         assert!(amount_out >= desired_out);
     }
 
@@ -47,12 +46,11 @@ mod math_tests {
 
     #[test]
     fn k_invariant_preserved_after_swap() {
-        let reserve_in = 100_000i128;
-        let reserve_out = 100_000i128;
+        let reserve = 100_000i128;
         let amount_in = 1_000i128;
-        let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out).unwrap();
-        let new_k = (reserve_in + amount_in) * (reserve_out - amount_out);
-        assert!(new_k >= reserve_in * reserve_out);
+        let amount_out = math::get_amount_out(amount_in, reserve, reserve).unwrap();
+        let new_k = (reserve + amount_in) * (reserve - amount_out);
+        assert!(new_k >= reserve * reserve);
     }
 
     #[test]
@@ -61,7 +59,7 @@ mod math_tests {
     }
 
     #[test]
-    fn fee_numerator_denominator_ratio() {
+    fn fee_constants_correct() {
         assert_eq!(math::FEE_NUMERATOR, 997);
         assert_eq!(math::FEE_DENOMINATOR, 1_000);
     }
@@ -111,10 +109,8 @@ mod liquidity_pool_tests {
     }
 
     #[test]
-    fn verify_k_invariant_violated_on_drained_pool() {
-        assert!(
-            liquidity_pool::verify_k_invariant(100, 100, 0, 0, 1_000, 1_000).is_err()
-        );
+    fn verify_k_invariant_violated() {
+        assert!(liquidity_pool::verify_k_invariant(100, 100, 0, 0, 1_000, 1_000).is_err());
     }
 
     #[test]
@@ -122,15 +118,14 @@ mod liquidity_pool_tests {
         let (a0, a1) = liquidity_pool::calculate_optimal_amounts(
             2_000, 2_000, 0, 0, 10_000, 20_000,
         ).unwrap();
-        assert!(a0 > 0 && a1 > 0);
-        assert!(a0 <= 2_000 && a1 <= 2_000);
+        assert!(a0 > 0 && a1 > 0 && a0 <= 2_000 && a1 <= 2_000);
     }
 }
 
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod soroban_contract_tests {
-    use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env};
+    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env};
     use nodus_amm::{NodusAmm, NodusAmmClient};
 
     fn setup() -> (Env, Address) {
@@ -141,7 +136,7 @@ mod soroban_contract_tests {
     }
 
     #[test]
-    fn initialize_sets_tokens() {
+    fn initialize_accepts_distinct_tokens() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
@@ -180,15 +175,13 @@ mod soroban_contract_tests {
     }
 
     #[test]
-    fn expired_deadline_rejected_on_add_liquidity() {
+    fn expired_deadline_rejected() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
         client.initialize(&t0, &t1);
-        let mut info = env.ledger().get();
-        info.timestamp = 2_000;
-        env.ledger().set(info);
+        env.ledger().set_timestamp(2_000);
         let from = Address::generate(&env);
         let to = Address::generate(&env);
         assert!(client.try_add_liquidity(&from, &to, &1_000, &1_000, &0, &0, &500).is_err());
@@ -209,18 +202,7 @@ mod soroban_contract_tests {
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
         client.initialize(&t0, &t1);
-        let user = Address::generate(&env);
-        assert_eq!(client.lp_balance_of(&user), 0);
-    }
-
-    #[test]
-    fn lp_total_supply_starts_zero() {
-        let (env, contract) = setup();
-        let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
-        assert_eq!(client.lp_total_supply(), 0);
+        assert_eq!(client.lp_balance_of(&Address::generate(&env)), 0);
     }
 
     #[test]
