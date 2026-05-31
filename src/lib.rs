@@ -2,7 +2,7 @@
 use soroban_sdk::{
     contract, contractimpl,
     token::Client as TokenClient,
-    Address, BytesN, Env, Symbol,
+    Address, Env, Symbol,
 };
 
 pub mod errors;
@@ -101,7 +101,7 @@ fn token_push(env: &Env, token: &Address, to: &Address, amount: i128) {
 }
 
 fn dead_address(env: &Env) -> Address {
-    Address::from_contract_id(env, &BytesN::from_array(env, &[0u8; 32]))
+    env.current_contract_address()
 }
 
 #[contractimpl]
