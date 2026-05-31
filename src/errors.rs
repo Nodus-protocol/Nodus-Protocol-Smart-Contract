@@ -1,18 +1,22 @@
-use scale::{Decode, Encode};
+#![no_std]
+use soroban_sdk::contracterror;
 
-#[derive(Debug, PartialEq, Eq, Encode, Decode)]
-#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum Error {
-    InsufficientLiquidity,
-    InsufficientLiquidityMinted,
-    InsufficientLiquidityBurned,
-    InsufficientOutputAmount,
-    ExcessiveInputAmount,
-    InvalidTokenPair,
-    ReentrancyDetected,
-    TransferFailed,
-    Expired,
-    KInvariantViolated,
-    ZeroAmount,
-    Overflow,
+    InsufficientLiquidity        = 1,
+    InsufficientLiquidityMinted  = 2,
+    InsufficientLiquidityBurned  = 3,
+    InsufficientOutputAmount     = 4,
+    ExcessiveInputAmount         = 5,
+    InvalidTokenPair             = 6,
+    ReentrancyDetected           = 7,
+    TransferFailed               = 8,
+    Expired                      = 9,
+    KInvariantViolated           = 10,
+    ZeroAmount                   = 11,
+    Overflow                     = 12,
+    AlreadyInitialized           = 13,
+    NotInitialized               = 14,
 }
