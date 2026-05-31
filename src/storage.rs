@@ -8,6 +8,8 @@ pub enum DataKey {
     Reserve0,
     Reserve1,
     TimestampLast,
+    Price0CumulativeLast,
+    Price1CumulativeLast,
     KLast,
     LpTotalSupply,
     LpBalance(Address),
