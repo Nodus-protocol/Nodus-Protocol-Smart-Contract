@@ -1,95 +1,40 @@
-use ink::env::call::{build_call, ExecutionInput, Selector};
-use ink::env::DefaultEnvironment;
-use ink::primitives::AccountId;
-use ink::prelude::vec::Vec;
-use crate::errors::Error;
+#![no_std]
+use soroban_sdk::{Address, Env};
+use crate::{errors::Error, storage::DataKey};
 
-/// Cross-contract call wrapper for the PSP22 LP token.
-pub struct LPTokenRef {
-    address: AccountId,
+pub fn total_supply(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::LpTotalSupply).unwrap_or(0i128)
 }
 
-impl LPTokenRef {
-    pub fn new(address: AccountId) -> Self {
-        Self { address }
-    }
+pub fn balance_of(env: &Env, owner: &Address) -> i128 {
+    env.storage().instance().get(&DataKey::LpBalance(owner.clone())).unwrap_or(0i128)
+}
 
-    pub fn total_supply(&self) -> u128 {
-        build_call::<DefaultEnvironment>()
-            .call(self.address)
-            .exec_input(ExecutionInput::new(Selector::new(
-                ink::selector_bytes!("PSP22::total_supply"),
-            )))
-            .returns::<u128>()
-            .invoke()
-    }
+pub fn mint(env: &Env, to: &Address, amount: i128) -> Result<(), Error> {
+    if amount <= 0 { return Err(Error::ZeroAmount); }
+    let new_bal = balance_of(env, to).checked_add(amount).ok_or(Error::Overflow)?;
+    let new_supply = total_supply(env).checked_add(amount).ok_or(Error::Overflow)?;
+    env.storage().instance().set(&DataKey::LpBalance(to.clone()), &new_bal);
+    env.storage().instance().set(&DataKey::LpTotalSupply, &new_supply);
+    Ok(())
+}
 
-    pub fn balance_of(&self, owner: AccountId) -> u128 {
-        build_call::<DefaultEnvironment>()
-            .call(self.address)
-            .exec_input(
-                ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP22::balance_of")))
-                    .push_arg(owner),
-            )
-            .returns::<u128>()
-            .invoke()
-    }
+pub fn burn(env: &Env, from: &Address, amount: i128) -> Result<(), Error> {
+    if amount <= 0 { return Err(Error::ZeroAmount); }
+    let bal = balance_of(env, from);
+    if bal < amount { return Err(Error::InsufficientLiquidityBurned); }
+    let supply = total_supply(env);
+    env.storage().instance().set(&DataKey::LpBalance(from.clone()), &(bal - amount));
+    env.storage().instance().set(&DataKey::LpTotalSupply, &(supply - amount));
+    Ok(())
+}
 
-    pub fn mint(&self, to: AccountId, amount: u128) -> Result<(), Error> {
-        build_call::<DefaultEnvironment>()
-            .call(self.address)
-            .exec_input(
-                ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP22Mintable::mint")))
-                    .push_arg(to)
-                    .push_arg(amount),
-            )
-            .returns::<Result<(), Error>>()
-            .invoke()
-    }
-
-    pub fn burn(&self, from: AccountId, amount: u128) -> Result<(), Error> {
-        build_call::<DefaultEnvironment>()
-            .call(self.address)
-            .exec_input(
-                ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP22Burnable::burn")))
-                    .push_arg(from)
-                    .push_arg(amount),
-            )
-            .returns::<Result<(), Error>>()
-            .invoke()
-    }
-
-    pub fn transfer(&self, to: AccountId, amount: u128) -> Result<(), Error> {
-        build_call::<DefaultEnvironment>()
-            .call(self.address)
-            .exec_input(
-                ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP22::transfer")))
-                    .push_arg(to)
-                    .push_arg(amount)
-                    .push_arg::<Vec<u8>>(Vec::new()),
-            )
-            .returns::<Result<(), Error>>()
-            .invoke()
-    }
-
-    pub fn transfer_from(
-        &self,
-        from: AccountId,
-        to: AccountId,
-        amount: u128,
-    ) -> Result<(), Error> {
-        build_call::<DefaultEnvironment>()
-            .call(self.address)
-            .exec_input(
-                ExecutionInput::new(Selector::new(
-                    ink::selector_bytes!("PSP22::transfer_from"),
-                ))
-                .push_arg(from)
-                .push_arg(to)
-                .push_arg(amount)
-                .push_arg::<Vec<u8>>(Vec::new()),
-            )
-            .returns::<Result<(), Error>>()
-            .invoke()
-    }
+pub fn transfer(env: &Env, from: &Address, to: &Address, amount: i128) -> Result<(), Error> {
+    if amount <= 0 { return Err(Error::ZeroAmount); }
+    let from_bal = balance_of(env, from);
+    if from_bal < amount { return Err(Error::InsufficientLiquidityBurned); }
+    let to_bal = balance_of(env, to);
+    env.storage().instance().set(&DataKey::LpBalance(from.clone()), &(from_bal - amount));
+    env.storage().instance().set(&DataKey::LpBalance(to.clone()), &(to_bal.checked_add(amount).ok_or(Error::Overflow)?));
+    Ok(())
 }
