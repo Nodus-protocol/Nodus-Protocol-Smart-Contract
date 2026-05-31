@@ -59,6 +59,12 @@ mod math_tests {
     fn overflow_inputs_handled() {
         assert!(math::get_amount_out(i128::MAX, i128::MAX, i128::MAX).is_err());
     }
+
+    #[test]
+    fn fee_numerator_denominator_ratio() {
+        assert_eq!(math::FEE_NUMERATOR, 997);
+        assert_eq!(math::FEE_DENOMINATOR, 1_000);
+    }
 }
 
 #[cfg(test)]
@@ -77,20 +83,24 @@ mod liquidity_pool_tests {
     }
 
     #[test]
-    fn calculate_liquidity_to_mint() {
-        let liq = liquidity_pool::calculate_liquidity_to_mint(1_000, 1_000, 10_000, 10_000, 100_000).unwrap();
+    fn calculate_liquidity_to_mint_proportional() {
+        let liq = liquidity_pool::calculate_liquidity_to_mint(
+            1_000, 1_000, 10_000, 10_000, 100_000,
+        ).unwrap();
         assert_eq!(liq, 10_000);
     }
 
     #[test]
-    fn calculate_withdrawal_amounts() {
-        let (a0, a1) = liquidity_pool::calculate_withdrawal_amounts(5_000, 100_000, 200_000, 10_000).unwrap();
+    fn calculate_withdrawal_amounts_proportional() {
+        let (a0, a1) = liquidity_pool::calculate_withdrawal_amounts(
+            5_000, 100_000, 200_000, 10_000,
+        ).unwrap();
         assert_eq!(a0, 50_000);
         assert_eq!(a1, 100_000);
     }
 
     #[test]
-    fn verify_k_invariant_holds() {
+    fn verify_k_invariant_holds_after_swap() {
         let r0 = 100_000i128;
         let r1 = 100_000i128;
         let amount_in = 1_000i128;
@@ -101,15 +111,27 @@ mod liquidity_pool_tests {
     }
 
     #[test]
-    fn verify_k_invariant_violated() {
-        assert!(liquidity_pool::verify_k_invariant(100, 100, 0, 0, 1_000, 1_000).is_err());
+    fn verify_k_invariant_violated_on_drained_pool() {
+        assert!(
+            liquidity_pool::verify_k_invariant(100, 100, 0, 0, 1_000, 1_000).is_err()
+        );
+    }
+
+    #[test]
+    fn optimal_amounts_preserves_ratio() {
+        let (a0, a1) = liquidity_pool::calculate_optimal_amounts(
+            2_000, 2_000, 0, 0, 10_000, 20_000,
+        ).unwrap();
+        assert!(a0 > 0 && a1 > 0);
+        assert!(a0 <= 2_000 && a1 <= 2_000);
     }
 }
 
 #[cfg(test)]
+#[cfg(feature = "testutils")]
 mod soroban_contract_tests {
     use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env};
-    use nodus_amm::NodusAmm;
+    use nodus_amm::{NodusAmm, NodusAmmClient};
 
     fn setup() -> (Env, Address) {
         let env = Env::default();
@@ -118,60 +140,98 @@ mod soroban_contract_tests {
         (env, contract)
     }
 
-    fn mock_token(env: &Env) -> Address {
-        Address::generate(env)
-    }
-
     #[test]
     fn initialize_sets_tokens() {
         let (env, contract) = setup();
-        let client = nodus_amm::NodusAmmClient::new(&env, &contract);
-        let t0 = mock_token(&env);
-        let t1 = mock_token(&env);
-        assert!(client.initialize(&t0, &t1).is_ok());
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        assert!(client.try_initialize(&t0, &t1).is_ok());
     }
 
     #[test]
     fn initialize_rejects_identical_tokens() {
         let (env, contract) = setup();
-        let client = nodus_amm::NodusAmmClient::new(&env, &contract);
-        let t0 = mock_token(&env);
-        assert!(client.initialize(&t0, &t0).is_err());
+        let client = NodusAmmClient::new(&env, &contract);
+        let t = Address::generate(&env);
+        assert!(client.try_initialize(&t, &t).is_err());
     }
 
     #[test]
     fn double_initialize_rejected() {
         let (env, contract) = setup();
-        let client = nodus_amm::NodusAmmClient::new(&env, &contract);
-        let t0 = mock_token(&env);
-        let t1 = mock_token(&env);
-        client.initialize(&t0, &t1).unwrap();
-        assert!(client.initialize(&t0, &t1).is_err());
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
+        assert!(client.try_initialize(&t0, &t1).is_err());
     }
 
     #[test]
     fn get_reserves_initial_zero() {
         let (env, contract) = setup();
-        let client = nodus_amm::NodusAmmClient::new(&env, &contract);
-        let t0 = mock_token(&env);
-        let t1 = mock_token(&env);
-        client.initialize(&t0, &t1).unwrap();
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
         let (r0, r1, _) = client.get_reserves();
         assert_eq!(r0, 0);
         assert_eq!(r1, 0);
     }
 
     #[test]
-    fn expired_deadline_rejected() {
+    fn expired_deadline_rejected_on_add_liquidity() {
         let (env, contract) = setup();
-        let client = nodus_amm::NodusAmmClient::new(&env, &contract);
-        let t0 = mock_token(&env);
-        let t1 = mock_token(&env);
-        client.initialize(&t0, &t1).unwrap();
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
         let mut info = env.ledger().get();
         info.timestamp = 2_000;
         env.ledger().set(info);
+        let from = Address::generate(&env);
         let to = Address::generate(&env);
-        assert!(client.add_liquidity(&1_000, &1_000, &0, &0, &to, &500).is_err());
+        assert!(client.try_add_liquidity(&from, &to, &1_000, &1_000, &0, &0, &500).is_err());
+    }
+
+    #[test]
+    fn not_initialized_swap_rejected() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let to = Address::generate(&env);
+        assert!(client.try_swap(&to, &100, &0).is_err());
+    }
+
+    #[test]
+    fn lp_balance_starts_zero() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
+        let user = Address::generate(&env);
+        assert_eq!(client.lp_balance_of(&user), 0);
+    }
+
+    #[test]
+    fn lp_total_supply_starts_zero() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
+        assert_eq!(client.lp_total_supply(), 0);
+    }
+
+    #[test]
+    fn price_cumulatives_start_zero() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
+        let (p0, p1) = client.get_price_cumulative();
+        assert_eq!(p0, 0u128);
+        assert_eq!(p1, 0u128);
     }
 }
