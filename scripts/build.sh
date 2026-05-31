@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Building Nodus Protocol AMM contracts..."
+echo "Building Nodus AMM contract for Soroban..."
 
-if ! command -v cargo-contract &> /dev/null; then
-    echo "cargo-contract not found. Installing..."
-    cargo install cargo-contract --locked
-fi
+rustup target add wasm32-unknown-unknown 2>/dev/null || true
 
-cargo contract build --release
+cargo build --target wasm32-unknown-unknown --release
 
-echo "Build complete: target/ink/amm_liquidity_pool.contract"
+WASM="target/wasm32-unknown-unknown/release/nodus_amm.wasm"
+echo "Build complete: $WASM"
+ls -lh "$WASM"
