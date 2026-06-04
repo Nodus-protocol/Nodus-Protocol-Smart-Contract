@@ -1,64 +1,75 @@
-#[cfg(all(test, feature = "e2e-tests"))]
-mod e2e {
-    use ink_e2e::prelude::*;
-    use amm_liquidity_pool::pool::LiquidityPoolRef;
+#[cfg(test)]
+#[cfg(feature = "testutils")]
+mod integration {
+    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env};
+    use nodus_amm::{NodusAmm, NodusAmmClient};
 
-    type E2EResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-    /// Deploys pool and LP token contracts, adds initial liquidity, verifies minted LP tokens.
-    #[ink_e2e::test]
-    async fn add_liquidity_mints_lp_tokens(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-        // 1. Deploy mock PSP22 token_0 and token_1
-        // 2. Deploy LP token contract
-        // 3. Deploy LiquidityPool with (token_0, token_1, lp_token)
-        // 4. Approve pool to spend token_0 and token_1
-        // 5. Call add_liquidity(100_000, 100_000, 0, 0, alice, u64::MAX)
-        // 6. Assert lp_token.balance_of(alice) == sqrt(100_000 * 100_000) - MINIMUM_LIQUIDITY
-        //    i.e., 100_000 - 1_000 = 99_000
-        Ok(())
+    fn setup_initialized() -> (Env, Address, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register_contract(None, NodusAmm);
+        let client = NodusAmmClient::new(&env, &contract);
+        let t0 = Address::generate(&env);
+        let t1 = Address::generate(&env);
+        client.initialize(&t0, &t1);
+        (env, contract, t0, t1)
     }
 
-    /// Adds liquidity, then removes it and verifies tokens are returned proportionally.
-    #[ink_e2e::test]
-    async fn remove_liquidity_returns_tokens(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-        // 1. Setup pool with 100_000 / 100_000 initial liquidity (alice holds 99_000 LP)
-        // 2. Alice approves LP token burn
-        // 3. Call remove_liquidity(99_000, 0, 0, alice, u64::MAX)
-        // 4. Assert alice receives ~99% of each reserve back
-        // 5. Assert LP total_supply == MINIMUM_LIQUIDITY (1_000) remaining
-        Ok(())
+    #[test]
+    fn swap_without_reserves_fails() {
+        let (env, contract, _, _) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        let to = Address::generate(&env);
+        assert!(client.try_swap(&to, &100, &0).is_err());
     }
 
-    /// Verifies a token swap preserves the K invariant and charges the 0.3% fee.
-    #[ink_e2e::test]
-    async fn swap_preserves_k_invariant(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-        // 1. Setup pool: reserve_0 = 1_000_000, reserve_1 = 1_000_000
-        // 2. Call get_amount_out(1_000, reserve_0, reserve_1) -> expected_out
-        // 3. Execute swap(0, expected_out, alice)
-        //    (alice sends token_0 directly; pool checks balance delta)
-        // 4. Assert reserve_0 increased, reserve_1 decreased
-        // 5. Assert new_reserve_0 * new_reserve_1 >= old_reserve_0 * old_reserve_1
-        Ok(())
+    #[test]
+    fn swap_zero_output_rejected() {
+        let (env, contract, _, _) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        let to = Address::generate(&env);
+        assert!(client.try_swap(&to, &0, &0).is_err());
     }
 
-    /// Verifies that a second concurrent call within a message is rejected.
-    #[ink_e2e::test]
-    async fn reentrancy_is_blocked(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-        // 1. Deploy a malicious reentrant contract that calls back into the pool
-        //    during a swap callback.
-        // 2. Invoke the malicious contract.
-        // 3. Assert the inner call returns Error::ReentrancyDetected.
-        // 4. Assert the outer swap succeeded but inner was rejected.
-        Ok(())
+    #[test]
+    fn lp_balance_starts_zero() {
+        let (env, contract, _, _) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        assert_eq!(client.lp_balance_of(&Address::generate(&env)), 0);
     }
 
-    /// Verifies that a swap past the deadline is rejected.
-    #[ink_e2e::test]
-    async fn expired_deadline_is_rejected(mut client: ink_e2e::Client<C, E>) -> E2EResult<()> {
-        // 1. Setup funded pool.
-        // 2. Call add_liquidity with deadline = 0 (already expired).
-        // 3. Assert Error::Expired is returned.
-        // 4. Assert reserves are unchanged.
-        Ok(())
+    #[test]
+    fn lp_total_supply_starts_zero() {
+        let (env, contract, _, _) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        assert_eq!(client.lp_total_supply(), 0);
+    }
+
+    #[test]
+    fn token_0_and_1_readable_after_init() {
+        let (env, contract, t0, t1) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        assert_eq!(client.token_0(), t0);
+        assert_eq!(client.token_1(), t1);
+    }
+
+    #[test]
+    fn expired_remove_liquidity_rejected() {
+        let (env, contract, _, _) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        env.ledger().set_timestamp(5_000);
+        let from = Address::generate(&env);
+        let to = Address::generate(&env);
+        assert!(client.try_remove_liquidity(&from, &to, &100, &0, &0, &1_000).is_err());
+    }
+
+    #[test]
+    fn not_initialized_token_query_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register_contract(None, NodusAmm);
+        let client = NodusAmmClient::new(&env, &contract);
+        assert!(client.try_token_0().is_err());
+        assert!(client.try_token_1().is_err());
     }
 }

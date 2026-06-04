@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/soroban-migration]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build Soroban Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+      - name: Build optimised contract WASM
+        run: stellar contract build
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodus-amm-wasm
+          path: target/wasm32-unknown-unknown/release/nodus_amm.wasm
+
+  test:
+    name: Test (unit + integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --features testutils
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --all-targets --features testutils -- -D warnings
+      - name: Format check
+        run: cargo fmt -- --check

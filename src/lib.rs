@@ -1,399 +1,362 @@
-#![cfg_attr(not(feature = "std"), no_std, no_main)]
+#![no_std]
+use soroban_sdk::{
+    contract, contractimpl,
+    token::Client as TokenClient,
+    Address, Env, Symbol,
+};
 
 pub mod errors;
 pub mod events;
 pub mod lp_token;
 pub mod liquidity_pool;
 pub mod math;
-pub mod reentrancy_guard;
+pub mod storage;
 pub mod traits;
 
 pub use errors::Error;
-pub use events::{Burn, Mint, Swap, Sync};
+use storage::DataKey;
 
-#[ink::contract]
-mod pool {
-    use super::{
-        errors::Error,
-        events::{Burn, Mint, Swap, Sync},
-        lp_token::LPTokenRef,
-        liquidity_pool as pool_math,
-        math::{self, MINIMUM_LIQUIDITY},
-        reentrancy_guard::ReentrancyGuard,
-        traits::ILiquidityPool,
-    };
-    use ink::env::call::{build_call, ExecutionInput, Selector};
-    use ink::env::DefaultEnvironment;
-    use ink::prelude::vec::Vec;
+const INSTANCE_TTL_THRESHOLD: u32 = 100;
+const INSTANCE_TTL_BUMP: u32 = 500;
 
-    #[ink(storage)]
-    pub struct LiquidityPool {
-        token_0: AccountId,
-        token_1: AccountId,
-        reserve_0: u128,
-        reserve_1: u128,
-        block_timestamp_last: u64,
-        price_0_cumulative_last: u128,
-        price_1_cumulative_last: u128,
-        k_last: u128,
-        lp_token: AccountId,
-        locked: bool,
+fn require_initialized(env: &Env) -> Result<(), Error> {
+    if !env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
+        return Err(Error::NotInitialized);
+    }
+    Ok(())
+}
+
+fn get_reserve_0(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::Reserve0).unwrap_or(0)
+}
+
+fn get_reserve_1(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::Reserve1).unwrap_or(0)
+}
+
+fn get_timestamp_last(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::TimestampLast).unwrap_or(0)
+}
+
+fn is_locked(env: &Env) -> bool {
+    env.storage().instance().get(&DataKey::Locked).unwrap_or(false)
+}
+
+fn lock(env: &Env) -> Result<(), Error> {
+    if is_locked(env) { return Err(Error::ReentrancyDetected); }
+    env.storage().instance().set(&DataKey::Locked, &true);
+    Ok(())
+}
+
+fn unlock(env: &Env) {
+    env.storage().instance().set(&DataKey::Locked, &false);
+}
+
+fn update(env: &Env, balance_0: i128, balance_1: i128, reserve_0: i128, reserve_1: i128) {
+    let timestamp = env.ledger().timestamp();
+    let time_elapsed = timestamp.saturating_sub(get_timestamp_last(env));
+
+    if time_elapsed > 0 && reserve_0 > 0 && reserve_1 > 0 {
+        let acc_0: u128 = env.storage().instance()
+            .get(&DataKey::Price0CumulativeLast).unwrap_or(0u128);
+        let acc_1: u128 = env.storage().instance()
+            .get(&DataKey::Price1CumulativeLast).unwrap_or(0u128);
+        let price_0 = ((reserve_1 as u128) << 32) / (reserve_0 as u128);
+        let price_1 = ((reserve_0 as u128) << 32) / (reserve_1 as u128);
+        env.storage().instance().set(
+            &DataKey::Price0CumulativeLast,
+            &acc_0.wrapping_add(price_0.saturating_mul(time_elapsed as u128)),
+        );
+        env.storage().instance().set(
+            &DataKey::Price1CumulativeLast,
+            &acc_1.wrapping_add(price_1.saturating_mul(time_elapsed as u128)),
+        );
     }
 
-    impl ReentrancyGuard for LiquidityPool {
-        fn is_locked(&self) -> bool {
-            self.locked
+    env.storage().instance().set(&DataKey::Reserve0, &balance_0);
+    env.storage().instance().set(&DataKey::Reserve1, &balance_1);
+    env.storage().instance().set(&DataKey::TimestampLast, &timestamp);
+    events::emit_sync(env, balance_0, balance_1);
+}
+
+fn token_balance(env: &Env, token: &Address) -> i128 {
+    TokenClient::new(env, token).balance(&env.current_contract_address())
+}
+
+fn token_pull(env: &Env, token: &Address, from: &Address, amount: i128) {
+    TokenClient::new(env, token).transfer_from(
+        &env.current_contract_address(),
+        from,
+        &env.current_contract_address(),
+        &amount,
+    );
+}
+
+fn token_push(env: &Env, token: &Address, to: &Address, amount: i128) {
+    TokenClient::new(env, token).transfer(&env.current_contract_address(), to, &amount);
+}
+
+fn dead_address(env: &Env) -> Address {
+    env.current_contract_address()
+}
+
+#[contract]
+pub struct NodusAmm;
+
+#[contractimpl]
+impl NodusAmm {
+    pub fn initialize(env: Env, token_0: Address, token_1: Address) -> Result<(), Error> {
+        if env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
+            return Err(Error::AlreadyInitialized);
         }
-        fn set_locked(&mut self, locked: bool) {
-            self.locked = locked;
-        }
+        if token_0 == token_1 { return Err(Error::InvalidTokenPair); }
+        env.storage().instance().set(&DataKey::Token0, &token_0);
+        env.storage().instance().set(&DataKey::Token1, &token_1);
+        env.storage().instance().set(&DataKey::Initialized, &true);
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        Ok(())
     }
 
-    impl LiquidityPool {
-        #[ink(constructor)]
-        pub fn new(
-            token_0: AccountId,
-            token_1: AccountId,
-            lp_token: AccountId,
-        ) -> Self {
-            assert_ne!(token_0, token_1, "identical token addresses");
-            Self {
-                token_0,
-                token_1,
-                reserve_0: 0,
-                reserve_1: 0,
-                block_timestamp_last: 0,
-                price_0_cumulative_last: 0,
-                price_1_cumulative_last: 0,
-                k_last: 0,
-                lp_token,
-                locked: false,
-            }
-        }
+    pub fn add_liquidity(
+        env: Env,
+        from: Address,
+        to: Address,
+        amount_0_desired: i128,
+        amount_1_desired: i128,
+        amount_0_min: i128,
+        amount_1_min: i128,
+        deadline: u64,
+    ) -> Result<i128, Error> {
+        require_initialized(&env)?;
+        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        lock(&env)?;
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
-        fn update(
-            &mut self,
-            balance_0: u128,
-            balance_1: u128,
-            reserve_0: u128,
-            reserve_1: u128,
-        ) {
-            let block_timestamp = self.env().block_timestamp();
-            let time_elapsed = block_timestamp.saturating_sub(self.block_timestamp_last);
+        from.require_auth();
 
-            if time_elapsed > 0 && reserve_0 > 0 && reserve_1 > 0 {
-                self.price_0_cumulative_last = self
-                    .price_0_cumulative_last
-                    .saturating_add(
-                        (reserve_1 / reserve_0).saturating_mul(time_elapsed as u128),
-                    );
-                self.price_1_cumulative_last = self
-                    .price_1_cumulative_last
-                    .saturating_add(
-                        (reserve_0 / reserve_1).saturating_mul(time_elapsed as u128),
-                    );
-            }
+        let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+        let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
 
-            self.reserve_0 = balance_0;
-            self.reserve_1 = balance_1;
-            self.block_timestamp_last = block_timestamp;
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
 
-            self.env().emit_event(Sync {
-                reserve_0: self.reserve_0,
-                reserve_1: self.reserve_1,
-            });
-        }
+        let (amount_0, amount_1) = if reserve_0 == 0 && reserve_1 == 0 {
+            (amount_0_desired, amount_1_desired)
+        } else {
+            liquidity_pool::calculate_optimal_amounts(
+                amount_0_desired, amount_1_desired,
+                amount_0_min, amount_1_min,
+                reserve_0, reserve_1,
+            ).map_err(|e| { unlock(&env); e })?
+        };
 
-        fn token_balance(&self, token: AccountId) -> u128 {
-            build_call::<DefaultEnvironment>()
-                .call(token)
-                .exec_input(
-                    ExecutionInput::new(Selector::new(
-                        ink::selector_bytes!("PSP22::balance_of"),
-                    ))
-                    .push_arg(self.env().account_id()),
-                )
-                .returns::<u128>()
-                .invoke()
-        }
+        token_pull(&env, &token_0, &from, amount_0);
+        token_pull(&env, &token_1, &from, amount_1);
 
-        fn token_transfer_from(
-            &self,
-            token: AccountId,
-            from: AccountId,
-            to: AccountId,
-            amount: u128,
-        ) -> Result<(), Error> {
-            build_call::<DefaultEnvironment>()
-                .call(token)
-                .exec_input(
-                    ExecutionInput::new(Selector::new(
-                        ink::selector_bytes!("PSP22::transfer_from"),
-                    ))
-                    .push_arg(from)
-                    .push_arg(to)
-                    .push_arg(amount)
-                    .push_arg::<Vec<u8>>(Vec::new()),
-                )
-                .returns::<Result<(), Error>>()
-                .invoke()
-        }
+        let total_supply = lp_token::total_supply(&env);
 
-        fn token_transfer(
-            &self,
-            token: AccountId,
-            to: AccountId,
-            amount: u128,
-        ) -> Result<(), Error> {
-            build_call::<DefaultEnvironment>()
-                .call(token)
-                .exec_input(
-                    ExecutionInput::new(Selector::new(ink::selector_bytes!("PSP22::transfer")))
-                        .push_arg(to)
-                        .push_arg(amount)
-                        .push_arg::<Vec<u8>>(Vec::new()),
-                )
-                .returns::<Result<(), Error>>()
-                .invoke()
-        }
+        let liquidity = if total_supply == 0 {
+            let initial = liquidity_pool::calculate_initial_liquidity(amount_0, amount_1)
+                .map_err(|e| { unlock(&env); e })?;
+            lp_token::mint(&env, &dead_address(&env), math::MINIMUM_LIQUIDITY)
+                .map_err(|e| { unlock(&env); e })?;
+            initial
+        } else {
+            liquidity_pool::calculate_liquidity_to_mint(
+                amount_0, amount_1, reserve_0, reserve_1, total_supply,
+            ).map_err(|e| { unlock(&env); e })?
+        };
+
+        if liquidity == 0 { unlock(&env); return Err(Error::InsufficientLiquidityMinted); }
+
+        lp_token::mint(&env, &to, liquidity)
+            .map_err(|e| { unlock(&env); e })?;
+
+        let b0 = token_balance(&env, &token_0);
+        let b1 = token_balance(&env, &token_1);
+        update(&env, b0, b1, reserve_0, reserve_1);
+
+        events::emit_mint(&env, from, amount_0, amount_1);
+        unlock(&env);
+        Ok(liquidity)
     }
 
-    impl ILiquidityPool for LiquidityPool {
-        #[ink(message)]
-        fn add_liquidity(
-            &mut self,
-            amount_0_desired: u128,
-            amount_1_desired: u128,
-            amount_0_min: u128,
-            amount_1_min: u128,
-            to: AccountId,
-            deadline: u64,
-        ) -> Result<u128, Error> {
-            self.lock()?;
+    pub fn remove_liquidity(
+        env: Env,
+        from: Address,
+        to: Address,
+        liquidity: i128,
+        amount_0_min: i128,
+        amount_1_min: i128,
+        deadline: u64,
+    ) -> Result<(i128, i128), Error> {
+        require_initialized(&env)?;
+        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        lock(&env)?;
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
-            if self.env().block_timestamp() > deadline {
-                self.unlock();
-                return Err(Error::Expired);
-            }
+        from.require_auth();
 
-            let lp = LPTokenRef::new(self.lp_token);
-            let total_supply = lp.total_supply();
+        let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+        let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
 
-            let (amount_0, amount_1) = if total_supply == 0 {
-                (amount_0_desired, amount_1_desired)
-            } else {
-                pool_math::calculate_optimal_amounts(
-                    amount_0_desired,
-                    amount_1_desired,
-                    amount_0_min,
-                    amount_1_min,
-                    self.reserve_0,
-                    self.reserve_1,
-                )
-                .map_err(|e| { self.unlock(); e })?
-            };
+        let total_supply = lp_token::total_supply(&env);
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
 
-            let caller = self.env().caller();
-            let pool_id = self.env().account_id();
+        let (amount_0, amount_1) = liquidity_pool::calculate_withdrawal_amounts(
+            liquidity, reserve_0, reserve_1, total_supply,
+        ).map_err(|e| { unlock(&env); e })?;
 
-            self.token_transfer_from(self.token_0, caller, pool_id, amount_0)
-                .map_err(|e| { self.unlock(); e })?;
-            self.token_transfer_from(self.token_1, caller, pool_id, amount_1)
-                .map_err(|e| { self.unlock(); e })?;
-
-            let liquidity = if total_supply == 0 {
-                let initial = pool_math::calculate_initial_liquidity(amount_0, amount_1)
-                    .map_err(|e| { self.unlock(); e })?;
-                lp.mint(AccountId::from([0u8; 32]), MINIMUM_LIQUIDITY)
-                    .map_err(|e| { self.unlock(); e })?;
-                initial
-            } else {
-                pool_math::calculate_liquidity_to_mint(
-                    amount_0,
-                    amount_1,
-                    self.reserve_0,
-                    self.reserve_1,
-                    total_supply,
-                )
-                .map_err(|e| { self.unlock(); e })?
-            };
-
-            if liquidity == 0 {
-                self.unlock();
-                return Err(Error::InsufficientLiquidityMinted);
-            }
-
-            lp.mint(to, liquidity)
-                .map_err(|e| { self.unlock(); e })?;
-
-            let b0 = self.token_balance(self.token_0);
-            let b1 = self.token_balance(self.token_1);
-            self.update(b0, b1, self.reserve_0, self.reserve_1);
-
-            self.env().emit_event(Mint {
-                sender: caller,
-                amount_0,
-                amount_1,
-            });
-
-            self.unlock();
-            Ok(liquidity)
+        if amount_0 < amount_0_min || amount_1 < amount_1_min {
+            unlock(&env);
+            return Err(Error::InsufficientLiquidityBurned);
         }
 
-        #[ink(message)]
-        fn remove_liquidity(
-            &mut self,
-            liquidity: u128,
-            amount_0_min: u128,
-            amount_1_min: u128,
-            to: AccountId,
-            deadline: u64,
-        ) -> Result<(u128, u128), Error> {
-            self.lock()?;
+        lp_token::burn(&env, &from, liquidity)
+            .map_err(|e| { unlock(&env); e })?;
 
-            if self.env().block_timestamp() > deadline {
-                self.unlock();
-                return Err(Error::Expired);
-            }
+        token_push(&env, &token_0, &to, amount_0);
+        token_push(&env, &token_1, &to, amount_1);
 
-            let lp = LPTokenRef::new(self.lp_token);
-            let total_supply = lp.total_supply();
+        let b0 = token_balance(&env, &token_0);
+        let b1 = token_balance(&env, &token_1);
+        update(&env, b0, b1, reserve_0, reserve_1);
 
-            let (amount_0, amount_1) = pool_math::calculate_withdrawal_amounts(
-                liquidity,
-                self.reserve_0,
-                self.reserve_1,
-                total_supply,
-            )
-            .map_err(|e| { self.unlock(); e })?;
+        events::emit_burn(&env, from, amount_0, amount_1, to);
+        unlock(&env);
+        Ok((amount_0, amount_1))
+    }
 
-            if amount_0 < amount_0_min || amount_1 < amount_1_min {
-                self.unlock();
-                return Err(Error::InsufficientLiquidityBurned);
-            }
+    pub fn swap(
+        env: Env,
+        to: Address,
+        amount_0_out: i128,
+        amount_1_out: i128,
+    ) -> Result<(), Error> {
+        require_initialized(&env)?;
+        lock(&env)?;
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
-            let caller = self.env().caller();
-            lp.burn(caller, liquidity)
-                .map_err(|e| { self.unlock(); e })?;
-
-            self.token_transfer(self.token_0, to, amount_0)
-                .map_err(|e| { self.unlock(); e })?;
-            self.token_transfer(self.token_1, to, amount_1)
-                .map_err(|e| { self.unlock(); e })?;
-
-            let b0 = self.token_balance(self.token_0);
-            let b1 = self.token_balance(self.token_1);
-            self.update(b0, b1, self.reserve_0, self.reserve_1);
-
-            self.env().emit_event(Burn {
-                sender: caller,
-                amount_0,
-                amount_1,
-                to,
-            });
-
-            self.unlock();
-            Ok((amount_0, amount_1))
+        if amount_0_out == 0 && amount_1_out == 0 {
+            unlock(&env);
+            return Err(Error::InsufficientOutputAmount);
         }
 
-        #[ink(message)]
-        fn swap(
-            &mut self,
-            amount_0_out: u128,
-            amount_1_out: u128,
-            to: AccountId,
-        ) -> Result<(), Error> {
-            self.lock()?;
+        let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+        let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
 
-            if amount_0_out == 0 && amount_1_out == 0 {
-                self.unlock();
-                return Err(Error::InsufficientOutputAmount);
-            }
-            if amount_0_out >= self.reserve_0 || amount_1_out >= self.reserve_1 {
-                self.unlock();
-                return Err(Error::InsufficientLiquidity);
-            }
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
 
-            // Optimistically transfer output tokens before verifying inputs (CEI pattern).
-            if amount_0_out > 0 {
-                self.token_transfer(self.token_0, to, amount_0_out)
-                    .map_err(|e| { self.unlock(); e })?;
-            }
-            if amount_1_out > 0 {
-                self.token_transfer(self.token_1, to, amount_1_out)
-                    .map_err(|e| { self.unlock(); e })?;
-            }
-
-            let balance_0 = self.token_balance(self.token_0);
-            let balance_1 = self.token_balance(self.token_1);
-
-            let amount_0_in = balance_0
-                .saturating_sub(self.reserve_0.saturating_sub(amount_0_out));
-            let amount_1_in = balance_1
-                .saturating_sub(self.reserve_1.saturating_sub(amount_1_out));
-
-            if amount_0_in == 0 && amount_1_in == 0 {
-                self.unlock();
-                return Err(Error::InsufficientLiquidity);
-            }
-
-            pool_math::verify_k_invariant(
-                balance_0,
-                balance_1,
-                amount_0_in,
-                amount_1_in,
-                self.reserve_0,
-                self.reserve_1,
-            )
-            .map_err(|e| { self.unlock(); e })?;
-
-            self.update(balance_0, balance_1, self.reserve_0, self.reserve_1);
-
-            let caller = self.env().caller();
-            self.env().emit_event(Swap {
-                sender: caller,
-                amount_0_in,
-                amount_1_in,
-                amount_0_out,
-                amount_1_out,
-                to,
-            });
-
-            self.unlock();
-            Ok(())
+        if amount_0_out >= reserve_0 || amount_1_out >= reserve_1 {
+            unlock(&env);
+            return Err(Error::InsufficientLiquidity);
         }
 
-        #[ink(message)]
-        fn sync(&mut self) -> Result<(), Error> {
-            let b0 = self.token_balance(self.token_0);
-            let b1 = self.token_balance(self.token_1);
-            self.update(b0, b1, self.reserve_0, self.reserve_1);
-            Ok(())
+        if amount_0_out > 0 { token_push(&env, &token_0, &to, amount_0_out); }
+        if amount_1_out > 0 { token_push(&env, &token_1, &to, amount_1_out); }
+
+        let balance_0 = token_balance(&env, &token_0);
+        let balance_1 = token_balance(&env, &token_1);
+
+        let amount_0_in = balance_0.saturating_sub(reserve_0.saturating_sub(amount_0_out));
+        let amount_1_in = balance_1.saturating_sub(reserve_1.saturating_sub(amount_1_out));
+
+        if amount_0_in == 0 && amount_1_in == 0 {
+            unlock(&env);
+            return Err(Error::InsufficientLiquidity);
         }
 
-        #[ink(message)]
-        fn get_reserves(&self) -> (u128, u128, u64) {
-            (self.reserve_0, self.reserve_1, self.block_timestamp_last)
-        }
+        liquidity_pool::verify_k_invariant(
+            balance_0, balance_1,
+            amount_0_in, amount_1_in,
+            reserve_0, reserve_1,
+        ).map_err(|e| { unlock(&env); e })?;
 
-        #[ink(message)]
-        fn get_amount_out(
-            &self,
-            amount_in: u128,
-            reserve_in: u128,
-            reserve_out: u128,
-        ) -> Result<u128, Error> {
-            math::get_amount_out(amount_in, reserve_in, reserve_out)
-        }
+        update(&env, balance_0, balance_1, reserve_0, reserve_1);
 
-        #[ink(message)]
-        fn get_amount_in(
-            &self,
-            amount_out: u128,
-            reserve_in: u128,
-            reserve_out: u128,
-        ) -> Result<u128, Error> {
-            math::get_amount_in(amount_out, reserve_in, reserve_out)
-        }
+        let caller = env.current_contract_address();
+        events::emit_swap(&env, caller, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
+        unlock(&env);
+        Ok(())
+    }
+
+    pub fn sync(env: Env) -> Result<(), Error> {
+        require_initialized(&env)?;
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+        let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
+        let b0 = token_balance(&env, &token_0);
+        let b1 = token_balance(&env, &token_1);
+        update(&env, b0, b1, get_reserve_0(&env), get_reserve_1(&env));
+        Ok(())
+    }
+
+    pub fn get_reserves(env: Env) -> (i128, i128, u64) {
+        (get_reserve_0(&env), get_reserve_1(&env), get_timestamp_last(&env))
+    }
+
+    pub fn get_price_cumulative(env: Env) -> (u128, u128) {
+        (
+            env.storage().instance().get(&DataKey::Price0CumulativeLast).unwrap_or(0u128),
+            env.storage().instance().get(&DataKey::Price1CumulativeLast).unwrap_or(0u128),
+        )
+    }
+
+    pub fn get_amount_out(_env: Env, amount_in: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error> {
+        math::get_amount_out(amount_in, reserve_in, reserve_out)
+    }
+
+    pub fn get_amount_in(_env: Env, amount_out: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error> {
+        math::get_amount_in(amount_out, reserve_in, reserve_out)
+    }
+
+    // ── LP token interface ──────────────────────────────────────────────────
+
+    pub fn lp_balance_of(env: Env, owner: Address) -> i128 {
+        lp_token::balance_of(&env, &owner)
+    }
+
+    pub fn lp_total_supply(env: Env) -> i128 {
+        lp_token::total_supply(&env)
+    }
+
+    pub fn transfer_lp(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
+        from.require_auth();
+        lp_token::transfer(&env, &from, &to, amount)
+    }
+
+    /// Approve `spender` to transfer up to `amount` of the caller's LP tokens.
+    pub fn approve_lp(env: Env, owner: Address, spender: Address, amount: i128) -> Result<(), Error> {
+        owner.require_auth();
+        lp_token::approve(&env, &owner, &spender, amount)
+    }
+
+    /// Return the remaining LP-token allowance granted by `owner` to `spender`.
+    pub fn lp_allowance(env: Env, owner: Address, spender: Address) -> i128 {
+        lp_token::allowance(&env, &owner, &spender)
+    }
+
+    /// Transfer LP tokens on behalf of `from` using an existing allowance.
+    pub fn transfer_lp_from(
+        env: Env,
+        spender: Address,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        spender.require_auth();
+        lp_token::transfer_from(&env, &spender, &from, &to, amount)
+    }
+
+    pub fn token_0(env: Env) -> Result<Address, Error> {
+        require_initialized(&env)?;
+        Ok(env.storage().instance().get(&DataKey::Token0).unwrap())
+    }
+
+    pub fn token_1(env: Env) -> Result<Address, Error> {
+        require_initialized(&env)?;
+        Ok(env.storage().instance().get(&DataKey::Token1).unwrap())
     }
 }
