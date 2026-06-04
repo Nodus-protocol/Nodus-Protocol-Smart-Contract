@@ -6,7 +6,7 @@ Constant-product Automated Market Maker (AMM) smart contract written in **Rust**
 
 ## Overview
 
-This contract implements a Uniswap V2-style AMM on Stellar Soroban. It holds reserves for two Stellar tokens, executes atomic swaps, and issues LP tokens representing each provider's proportional share.
+This contract implements a Uniswap V2-style AMM on Stellar Soroban. It holds reserves for two SEP-41 Stellar tokens, executes atomic swaps, and issues LP tokens representing each provider's proportional share.
 
 ## Architecture
 
@@ -30,144 +30,120 @@ This contract implements a Uniswap V2-style AMM on Stellar Soroban. It holds res
 
 LP tokens are tracked internally in the pool's persistent storage — no separate token contract is required.
 
+---
+
 ## Repository Structure
 
 ```
 src/
-  lib.rs              Contract entry: initialize, add_liquidity, remove_liquidity, swap, sync
-  liquidity_pool.rs   Pool math: optimal amounts, K invariant, LP minting/burning
-  lp_token.rs         Internal LP balance helpers (mint, burn, transfer)
+  lib.rs              Contract entry point — all public functions
+  liquidity_pool.rs   Pool math: optimal amounts, K-invariant, LP mint/burn
+  lp_token.rs         Internal LP ledger: mint, burn, transfer, approve, allowance
   math.rs             AMM formulas: get_amount_out, get_amount_in, sqrt
-  events.rs           Event structs (Mint, Burn, Swap, Sync) + publish helpers
-  errors.rs           Error enum
-  storage.rs          DataKey enum for typed Soroban storage
-  traits.rs           IAmmPool pure-Rust interface
-  reentrancy_guard.rs ReentrancyGuard trait
+  storage.rs          DataKey enum for all instance + persistent storage keys
+  events.rs           Soroban event wrappers: Mint, Burn, Swap, Sync
+  errors.rs           Stable #[contracterror] enum
+  traits.rs           IAmmPool interface definition
 
 tests/
-  unit_tests.rs       Math and contract-level unit tests
-  integration_tests.rs Integration tests (Soroban testutils)
-  fuzz_tests.rs       Property-based invariant tests
-
-scripts/
-  build.sh            Build WASM
-  test.sh             Run full test suite
-  deploy.sh           Deploy to Stellar testnet or mainnet
-
-.github/workflows/ci.yml  CI: build, test, lint on every PR
+  unit_tests.rs       Pure math + liquidity-pool unit tests (no Soroban env)
+  integration_tests.rs Soroban testenv contract interaction tests
+  fuzz_tests.rs       Property tests: k-invariant, sqrt floor, fee monotonicity
 ```
 
-## Key Features
+---
 
-| Feature | Detail |
-|---|---|
-| Constant-product invariant | `x * y = k`; fee-adjusted check after every swap |
-| Swap fee | 0.3% (997/1000 multiplier on input) |
-| Minimum liquidity lock | `MINIMUM_LIQUIDITY = 1000` permanently minted to the zero address on first deposit |
-| Slippage protection | `amount_0_min` / `amount_1_min` on all liquidity operations |
-| Deadline | `deadline: u64` (ledger timestamp) rejects stale transactions |
-| TWAP oracle | Q32.32 price accumulators updated on every reserve change |
-| Reentrancy guard | `Locked` flag in instance storage; CEI pattern throughout |
-| TTL management | Instance and persistent storage bumped on every call |
+## Contract Functions
+
+### Pool lifecycle
+
+| Function | Auth | Description |
+|----------|------|-------------|
+| `initialize(token_0, token_1)` | — | One-time setup. Stores token addresses. |
+| `sync()` | — | Reconcile reserves with actual contract token balances. |
+
+### Liquidity
+
+| Function | Auth | Description |
+|----------|------|-------------|
+| `add_liquidity(from, to, amount_0_desired, amount_1_desired, amount_0_min, amount_1_min, deadline)` | `from` | Deposit tokens, receive LP tokens. |
+| `remove_liquidity(from, to, liquidity, amount_0_min, amount_1_min, deadline)` | `from` | Burn LP tokens, receive underlying tokens. |
+
+### Swaps
+
+| Function | Auth | Description |
+|----------|------|-------------|
+| `swap(to, amount_0_out, amount_1_out)` | — | Low-level swap. Caller must transfer tokens in before calling; K-invariant enforced post-swap. |
+| `get_amount_out(amount_in, reserve_in, reserve_out)` | — | Quote output for a given input (0.3% fee). |
+| `get_amount_in(amount_out, reserve_in, reserve_out)` | — | Quote input required to receive a given output. |
+
+### LP token interface
+
+| Function | Auth | Description |
+|----------|------|-------------|
+| `lp_balance_of(owner)` | — | Return LP token balance. |
+| `lp_total_supply()` | — | Return total LP tokens in circulation. |
+| `transfer_lp(from, to, amount)` | `from` | Transfer LP tokens directly. |
+| `approve_lp(owner, spender, amount)` | `owner` | Approve `spender` to transfer up to `amount` LP tokens. |
+| `lp_allowance(owner, spender)` | — | Return remaining approved LP amount. |
+| `transfer_lp_from(spender, from, to, amount)` | `spender` | Transfer LP tokens using an existing allowance. |
+
+### View
+
+| Function | Description |
+|----------|-------------|
+| `get_reserves()` | Returns `(reserve_0, reserve_1, timestamp_last)`. |
+| `get_price_cumulative()` | Returns `(price_0_cumulative_last, price_1_cumulative_last)` for TWAP. |
+| `token_0()` / `token_1()` | Return the configured token contract addresses. |
+
+---
+
+## Build
+
+```bash
+# Install Stellar CLI
+cargo install --locked stellar-cli --features opt
+
+# Build (produces optimised WASM)
+make build
+# or: stellar contract build
+
+# Run tests
+make test
+
+# Lint
+make lint
+```
+
+---
+
+## Deploy
+
+```bash
+# Testnet
+STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... make deploy-testnet
+
+# Mainnet
+STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... make deploy-mainnet
+```
+
+The deploy script uploads the WASM, deploys a new contract instance, and calls `initialize`.
+
+---
 
 ## Math
 
-### Swap output
-```
-amount_out = (reserve_out × amount_in × 997) / (reserve_in × 1000 + amount_in × 997)
-```
+The AMM uses the constant-product formula `k = x * y` with a **0.3% fee** (997/1000):
 
-### Swap input (exact output)
 ```
-amount_in = (reserve_in × amount_out × 1000) / ((reserve_out − amount_out) × 997) + 1
+amount_out = (amount_in * 997 * reserve_out) / (reserve_in * 1000 + amount_in * 997)
 ```
 
-### LP minting (first deposit)
-```
-liquidity = sqrt(amount_0 × amount_1) − MINIMUM_LIQUIDITY
-```
+The minimum liquidity constant (`MINIMUM_LIQUIDITY = 1000`) is permanently locked in the dead address on first deposit to prevent price manipulation attacks on empty pools.
 
-### LP minting (subsequent deposits)
-```
-liquidity = min(amount_0 × total_supply / reserve_0, amount_1 × total_supply / reserve_1)
-```
+TWAP price accumulators use Q32.32 fixed-point: `price_cumulative += (reserve_1 << 32) / reserve_0 * time_elapsed`.
 
-## Build & Deploy
-
-### Prerequisites
-
-```bash
-rustup target add wasm32-unknown-unknown
-# optional: install Stellar CLI
-cargo install stellar-cli
-```
-
-### Build
-
-```bash
-make build
-# or directly:
-cargo build --target wasm32-unknown-unknown --release
-```
-
-### Test
-
-```bash
-make test
-# or:
-cargo test --features testutils
-```
-
-### Deploy to Stellar testnet
-
-```bash
-export STELLAR_SECRET_KEY="SXXX..."
-export TOKEN_0="CXXX..."
-export TOKEN_1="CYYY..."
-make deploy-testnet
-```
-
-## Contract API
-
-### `initialize(token_0, token_1)`
-Sets up the pool. Can only be called once.
-
-### `add_liquidity(from, to, amount_0_desired, amount_1_desired, amount_0_min, amount_1_min, deadline) → i128`
-- `from` — address that provides tokens (must pre-approve pool as spender)
-- `to` — address that receives LP tokens
-- Returns LP tokens minted
-
-### `remove_liquidity(from, to, liquidity, amount_0_min, amount_1_min, deadline) → (i128, i128)`
-- `from` — address that burns LP tokens
-- `to` — address that receives underlying tokens
-
-### `swap(to, amount_0_out, amount_1_out)`
-Optimistic transfer; verifies K invariant after receiving input tokens.
-
-### `sync()`
-Reconciles tracked reserves with actual on-chain balances.
-
-### View functions
-- `get_reserves() → (i128, i128, u64)` — reserve_0, reserve_1, timestamp_last
-- `get_price_cumulative() → (u128, u128)` — TWAP accumulators
-- `get_amount_out(amount_in, reserve_in, reserve_out) → i128`
-- `get_amount_in(amount_out, reserve_in, reserve_out) → i128`
-- `lp_balance_of(owner) → i128`
-- `lp_total_supply() → i128`
-- `token_0() → Address`, `token_1() → Address`
-
-## Security
-
-| Threat | Mitigation |
-|---|---|
-| Reentrancy | `Locked` storage flag; CEI pattern |
-| Integer overflow | `checked_*` throughout; `Error::Overflow` on failure |
-| First-deposit manipulation | `MINIMUM_LIQUIDITY` permanently burned to address(0) |
-| K invariant bypass | Fee-adjusted K check after every swap |
-| Flash price manipulation | TWAP accumulators use pre-call reserve snapshots |
-| Front-running | `amount_X_min` slippage bounds on all liquidity ops |
-| Stale transactions | `deadline` parameter |
-| State expiry | TTL bumped on every state-changing call |
+---
 
 ## License
 

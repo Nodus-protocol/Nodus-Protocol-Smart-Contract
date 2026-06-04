@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Building Nodus AMM contract for Soroban..."
+echo "Building Nodus AMM contract for Stellar Soroban..."
 
-rustup target add wasm32-unknown-unknown 2>/dev/null || true
+if ! command -v stellar &>/dev/null; then
+    echo "Stellar CLI not found. Install: cargo install --locked stellar-cli --features opt"
+    exit 1
+fi
 
-cargo build --target wasm32-unknown-unknown --release
+stellar contract build
 
 WASM="target/wasm32-unknown-unknown/release/nodus_amm.wasm"
 echo "Build complete: $WASM"

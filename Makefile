@@ -1,11 +1,11 @@
-.PHONY: build test lint format clean deploy-testnet help
+.PHONY: build test lint format clean deploy-testnet deploy-mainnet help
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 	    awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
 
-build: ## Build optimised WASM (target/wasm32-unknown-unknown/release/nodus_amm.wasm)
-	cargo build --target wasm32-unknown-unknown --release
+build: ## Build optimised contract WASM via Stellar CLI
+	stellar contract build
 
 test: ## Run all tests (unit + integration; requires testutils feature)
 	cargo test --features testutils
