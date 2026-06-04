@@ -10,7 +10,6 @@ pub mod events;
 pub mod lp_token;
 pub mod liquidity_pool;
 pub mod math;
-pub mod reentrancy_guard;
 pub mod storage;
 pub mod traits;
 
@@ -19,9 +18,6 @@ use storage::DataKey;
 
 const INSTANCE_TTL_THRESHOLD: u32 = 100;
 const INSTANCE_TTL_BUMP: u32 = 500;
-
-#[contract]
-pub struct NodusAmm;
 
 fn require_initialized(env: &Env) -> Result<(), Error> {
     if !env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
@@ -103,6 +99,9 @@ fn token_push(env: &Env, token: &Address, to: &Address, amount: i128) {
 fn dead_address(env: &Env) -> Address {
     env.current_contract_address()
 }
+
+#[contract]
+pub struct NodusAmm;
 
 #[contractimpl]
 impl NodusAmm {
@@ -313,6 +312,8 @@ impl NodusAmm {
         math::get_amount_in(amount_out, reserve_in, reserve_out)
     }
 
+    // ── LP token interface ──────────────────────────────────────────────────
+
     pub fn lp_balance_of(env: Env, owner: Address) -> i128 {
         lp_token::balance_of(&env, &owner)
     }
@@ -324,6 +325,29 @@ impl NodusAmm {
     pub fn transfer_lp(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         from.require_auth();
         lp_token::transfer(&env, &from, &to, amount)
+    }
+
+    /// Approve `spender` to transfer up to `amount` of the caller's LP tokens.
+    pub fn approve_lp(env: Env, owner: Address, spender: Address, amount: i128) -> Result<(), Error> {
+        owner.require_auth();
+        lp_token::approve(&env, &owner, &spender, amount)
+    }
+
+    /// Return the remaining LP-token allowance granted by `owner` to `spender`.
+    pub fn lp_allowance(env: Env, owner: Address, spender: Address) -> i128 {
+        lp_token::allowance(&env, &owner, &spender)
+    }
+
+    /// Transfer LP tokens on behalf of `from` using an existing allowance.
+    pub fn transfer_lp_from(
+        env: Env,
+        spender: Address,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        spender.require_auth();
+        lp_token::transfer_from(&env, &spender, &from, &to, amount)
     }
 
     pub fn token_0(env: Env) -> Result<Address, Error> {

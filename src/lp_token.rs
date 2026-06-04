@@ -20,6 +20,19 @@ pub fn balance_of(env: &Env, owner: &Address) -> i128 {
     bal
 }
 
+pub fn allowance(env: &Env, owner: &Address, spender: &Address) -> i128 {
+    let key = DataKey::LpAllowance(owner.clone(), spender.clone());
+    env.storage().persistent().get(&key).unwrap_or(0i128)
+}
+
+pub fn approve(env: &Env, owner: &Address, spender: &Address, amount: i128) -> Result<(), Error> {
+    if amount < 0 { return Err(Error::ZeroAmount); }
+    let key = DataKey::LpAllowance(owner.clone(), spender.clone());
+    env.storage().persistent().set(&key, &amount);
+    env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(())
+}
+
 pub fn mint(env: &Env, to: &Address, amount: i128) -> Result<(), Error> {
     if amount <= 0 { return Err(Error::ZeroAmount); }
     let key = DataKey::LpBalance(to.clone());
@@ -56,4 +69,20 @@ pub fn transfer(env: &Env, from: &Address, to: &Address, amount: i128) -> Result
     env.storage().persistent().set(&to_key, &to_new);
     env.storage().persistent().extend_ttl(&to_key, TTL_THRESHOLD, TTL_BUMP);
     Ok(())
+}
+
+/// Transfer on behalf of `from` using a pre-approved allowance.
+pub fn transfer_from(
+    env: &Env,
+    spender: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) -> Result<(), Error> {
+    if amount <= 0 { return Err(Error::ZeroAmount); }
+    let allowed = allowance(env, from, spender);
+    if allowed < amount { return Err(Error::InsufficientLiquidity); }
+    // Deduct allowance first (checks-effects-interactions)
+    approve(env, from, spender, allowed - amount)?;
+    transfer(env, from, to, amount)
 }

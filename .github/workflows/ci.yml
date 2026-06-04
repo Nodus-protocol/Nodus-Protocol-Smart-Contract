@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build WASM
+    name: Build Soroban Contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,8 +17,15 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Build contract
-        run: cargo build --target wasm32-unknown-unknown --release
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+      - name: Build optimised contract WASM
+        run: stellar contract build
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodus-amm-wasm
+          path: target/wasm32-unknown-unknown/release/nodus_amm.wasm
 
   test:
     name: Test (unit + integration)

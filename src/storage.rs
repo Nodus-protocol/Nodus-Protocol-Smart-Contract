@@ -13,6 +13,8 @@ pub enum DataKey {
     KLast,
     LpTotalSupply,
     LpBalance(Address),
+    /// Approved LP-token spending allowance: (owner, spender) → amount.
+    LpAllowance(Address, Address),
     Locked,
     Initialized,
 }
