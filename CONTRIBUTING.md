@@ -110,7 +110,7 @@ git push origin your-branch-name
 
 ## Commit Message Format
 
-We follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.
+We follow the Conventional Commits specification.
 
 **Format:**
 
@@ -254,7 +254,7 @@ All PRs must include tests appropriate to the change:
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Report them privately by emailing **security@nodusprotocol.xyz** with:
+Report them privately by opening a [GitHub Security Advisory](../../security/advisories/new) in this repository. Include:
 - Description of the vulnerability
 - Steps to reproduce
 - Potential impact
