@@ -1,5 +1,10 @@
 # Nodus Protocol — AMM Liquidity Pool
 
+[![CI](https://github.com/Nodus-protocol/Nodus-Protocol-Smart-Contract/actions/workflows/ci.yml/badge.svg)](https://github.com/Nodus-protocol/Nodus-Protocol-Smart-Contract/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust)](rust-toolchain.toml)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 Constant-product Automated Market Maker (AMM) smart contract written in **Rust** for **Stellar Soroban**.
 
 ---
