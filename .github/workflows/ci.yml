@@ -18,7 +18,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --features opt
+        run: cargo install --locked stellar-cli
       - name: Build optimised contract WASM
         run: stellar contract build
       - name: Upload WASM artifact
