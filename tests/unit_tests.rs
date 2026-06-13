@@ -131,7 +131,7 @@ mod soroban_contract_tests {
     fn setup() -> (Env, Address) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract = env.register_contract(None, NodusAmm);
+        let contract = env.register(NodusAmm, ());
         (env, contract)
     }
 

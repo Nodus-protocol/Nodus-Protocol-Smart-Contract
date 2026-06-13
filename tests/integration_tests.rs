@@ -7,7 +7,7 @@ mod integration {
     fn setup_initialized() -> (Env, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract = env.register_contract(None, NodusAmm);
+        let contract = env.register(NodusAmm, ());
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
@@ -68,7 +68,7 @@ mod integration {
     fn not_initialized_token_query_fails() {
         let env = Env::default();
         env.mock_all_auths();
-        let contract = env.register_contract(None, NodusAmm);
+        let contract = env.register(NodusAmm, ());
         let client = NodusAmmClient::new(&env, &contract);
         assert!(client.try_token_0().is_err());
         assert!(client.try_token_1().is_err());

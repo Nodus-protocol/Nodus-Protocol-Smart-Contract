@@ -13,7 +13,11 @@ pub fn get_amount_out(amount_in: i128, reserve_in: i128, reserve_out: i128) -> R
     let denominator = reserve_in
         .checked_mul(FEE_DENOMINATOR).ok_or(Error::Overflow)?
         .checked_add(fee_in).ok_or(Error::Overflow)?;
-    Ok(numerator / denominator)
+    let amount_out = numerator / denominator;
+    if amount_out == 0 {
+        return Err(Error::InsufficientOutputAmount);
+    }
+    Ok(amount_out)
 }
 
 pub fn get_amount_in(amount_out: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error> {
