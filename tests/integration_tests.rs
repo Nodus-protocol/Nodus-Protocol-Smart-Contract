@@ -11,7 +11,8 @@ mod integration {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
+        let admin = Address::generate(&env);
+        client.initialize(&t0, &t1, &admin);
         (env, contract, t0, t1)
     }
 

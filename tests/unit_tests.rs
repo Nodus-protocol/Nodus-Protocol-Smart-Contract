@@ -141,7 +141,8 @@ mod soroban_contract_tests {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        assert!(client.try_initialize(&t0, &t1).is_ok());
+        let admin = Address::generate(&env);
+        assert!(client.try_initialize(&t0, &t1, &admin).is_ok());
     }
 
     #[test]
@@ -149,7 +150,8 @@ mod soroban_contract_tests {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
         let t = Address::generate(&env);
-        assert!(client.try_initialize(&t, &t).is_err());
+        let admin = Address::generate(&env);
+        assert!(client.try_initialize(&t, &t, &admin).is_err());
     }
 
     #[test]
@@ -158,8 +160,9 @@ mod soroban_contract_tests {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
-        assert!(client.try_initialize(&t0, &t1).is_err());
+        let admin = Address::generate(&env);
+        client.initialize(&t0, &t1, &admin);
+        assert!(client.try_initialize(&t0, &t1, &admin).is_err());
     }
 
     #[test]
@@ -168,7 +171,7 @@ mod soroban_contract_tests {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
+        client.initialize(&t0, &t1, &Address::generate(&env));
         let (r0, r1, _) = client.get_reserves();
         assert_eq!(r0, 0);
         assert_eq!(r1, 0);
@@ -180,7 +183,7 @@ mod soroban_contract_tests {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
+        client.initialize(&t0, &t1, &Address::generate(&env));
         env.ledger().set_timestamp(2_000);
         let from = Address::generate(&env);
         let to = Address::generate(&env);
@@ -201,7 +204,7 @@ mod soroban_contract_tests {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
+        client.initialize(&t0, &t1, &Address::generate(&env));
         assert_eq!(client.lp_balance_of(&Address::generate(&env)), 0);
     }
 
@@ -211,7 +214,7 @@ mod soroban_contract_tests {
         let client = NodusAmmClient::new(&env, &contract);
         let t0 = Address::generate(&env);
         let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1);
+        client.initialize(&t0, &t1, &Address::generate(&env));
         let (p0, p1) = client.get_price_cumulative();
         assert_eq!(p0, 0u128);
         assert_eq!(p1, 0u128);
