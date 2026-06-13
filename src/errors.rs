@@ -15,4 +15,8 @@ pub enum Error {
     KInvariantViolated,
     ZeroAmount,
     Overflow,
+    /// Swap output fell below the caller-specified minimum (slippage guard).
+    SlippageTooHigh,
+    /// Caller is not the authorised admin for this operation.
+    Unauthorized,
 }
