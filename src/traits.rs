@@ -53,6 +53,40 @@ pub trait ILiquidityPool {
         reserve_in: u128,
         reserve_out: u128,
     ) -> Result<u128, Error>;
+
+    /// High-level swap: sell exactly `amount_in` of token_0 for token_1.
+    /// Reverts with `SlippageTooHigh` if the output falls below `amount_out_min`.
+    /// `deadline` is a block-timestamp guard against stale transactions.
+    #[ink(message)]
+    fn swap_exact_tokens_for_tokens(
+        &mut self,
+        amount_in: u128,
+        amount_out_min: u128,
+        zero_for_one: bool,
+        to: AccountId,
+        deadline: u64,
+    ) -> Result<u128, Error>;
+
+    /// High-level swap: buy exactly `amount_out` of the output token.
+    /// Reverts with `SlippageTooHigh` if the required input exceeds `amount_in_max`.
+    #[ink(message)]
+    fn swap_tokens_for_exact_tokens(
+        &mut self,
+        amount_out: u128,
+        amount_in_max: u128,
+        zero_for_one: bool,
+        to: AccountId,
+        deadline: u64,
+    ) -> Result<u128, Error>;
+
+    /// Returns the 1e18-scaled spot price of the pool's token pair.
+    /// `zero_for_one = true` → price of token_0 in terms of token_1.
+    #[ink(message)]
+    fn get_spot_price(&self, zero_for_one: bool) -> Result<u128, Error>;
+
+    /// Returns price impact in basis points for a hypothetical `amount_in`.
+    #[ink(message)]
+    fn get_price_impact(&self, amount_in: u128, zero_for_one: bool) -> Result<u128, Error>;
 }
 
 #[ink::trait_definition]

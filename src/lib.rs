@@ -395,5 +395,153 @@ mod pool {
         ) -> Result<u128, Error> {
             math::get_amount_in(amount_out, reserve_in, reserve_out)
         }
+
+        #[ink(message)]
+        fn swap_exact_tokens_for_tokens(
+            &mut self,
+            amount_in: u128,
+            amount_out_min: u128,
+            zero_for_one: bool,
+            to: AccountId,
+            deadline: u64,
+        ) -> Result<u128, Error> {
+            self.lock()?;
+
+            if self.env().block_timestamp() > deadline {
+                self.unlock();
+                return Err(Error::Expired);
+            }
+
+            let (reserve_in, reserve_out, token_in, token_out) = if zero_for_one {
+                (self.reserve_0, self.reserve_1, self.token_0, self.token_1)
+            } else {
+                (self.reserve_1, self.reserve_0, self.token_1, self.token_0)
+            };
+
+            let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out)
+                .map_err(|e| { self.unlock(); e })?;
+
+            if amount_out < amount_out_min {
+                self.unlock();
+                return Err(Error::SlippageTooHigh);
+            }
+
+            let caller = self.env().caller();
+            let pool_id = self.env().account_id();
+
+            self.token_transfer_from(token_in, caller, pool_id, amount_in)
+                .map_err(|e| { self.unlock(); e })?;
+            self.token_transfer(token_out, to, amount_out)
+                .map_err(|e| { self.unlock(); e })?;
+
+            let b0 = self.token_balance(self.token_0);
+            let b1 = self.token_balance(self.token_1);
+            let (amount_0_in, amount_1_in, amount_0_out, amount_1_out) = if zero_for_one {
+                (amount_in, 0u128, 0u128, amount_out)
+            } else {
+                (0u128, amount_in, amount_out, 0u128)
+            };
+
+            pool_math::verify_k_invariant(b0, b1, amount_0_in, amount_1_in, self.reserve_0, self.reserve_1)
+                .map_err(|e| { self.unlock(); e })?;
+
+            self.update(b0, b1, self.reserve_0, self.reserve_1);
+
+            self.env().emit_event(Swap {
+                sender: caller,
+                amount_0_in,
+                amount_1_in,
+                amount_0_out,
+                amount_1_out,
+                to,
+            });
+
+            self.unlock();
+            Ok(amount_out)
+        }
+
+        #[ink(message)]
+        fn swap_tokens_for_exact_tokens(
+            &mut self,
+            amount_out: u128,
+            amount_in_max: u128,
+            zero_for_one: bool,
+            to: AccountId,
+            deadline: u64,
+        ) -> Result<u128, Error> {
+            self.lock()?;
+
+            if self.env().block_timestamp() > deadline {
+                self.unlock();
+                return Err(Error::Expired);
+            }
+
+            let (reserve_in, reserve_out, token_in, token_out) = if zero_for_one {
+                (self.reserve_0, self.reserve_1, self.token_0, self.token_1)
+            } else {
+                (self.reserve_1, self.reserve_0, self.token_1, self.token_0)
+            };
+
+            let amount_in = math::get_amount_in(amount_out, reserve_in, reserve_out)
+                .map_err(|e| { self.unlock(); e })?;
+
+            if amount_in > amount_in_max {
+                self.unlock();
+                return Err(Error::SlippageTooHigh);
+            }
+
+            let caller = self.env().caller();
+            let pool_id = self.env().account_id();
+
+            self.token_transfer_from(token_in, caller, pool_id, amount_in)
+                .map_err(|e| { self.unlock(); e })?;
+            self.token_transfer(token_out, to, amount_out)
+                .map_err(|e| { self.unlock(); e })?;
+
+            let b0 = self.token_balance(self.token_0);
+            let b1 = self.token_balance(self.token_1);
+            let (amount_0_in, amount_1_in, amount_0_out, amount_1_out) = if zero_for_one {
+                (amount_in, 0u128, 0u128, amount_out)
+            } else {
+                (0u128, amount_in, amount_out, 0u128)
+            };
+
+            pool_math::verify_k_invariant(b0, b1, amount_0_in, amount_1_in, self.reserve_0, self.reserve_1)
+                .map_err(|e| { self.unlock(); e })?;
+
+            self.update(b0, b1, self.reserve_0, self.reserve_1);
+
+            self.env().emit_event(Swap {
+                sender: caller,
+                amount_0_in,
+                amount_1_in,
+                amount_0_out,
+                amount_1_out,
+                to,
+            });
+
+            self.unlock();
+            Ok(amount_in)
+        }
+
+        #[ink(message)]
+        fn get_spot_price(&self, zero_for_one: bool) -> Result<u128, Error> {
+            if zero_for_one {
+                math::get_spot_price(self.reserve_0, self.reserve_1)
+            } else {
+                math::get_spot_price(self.reserve_1, self.reserve_0)
+            }
+        }
+
+        #[ink(message)]
+        fn get_price_impact(&self, amount_in: u128, zero_for_one: bool) -> Result<u128, Error> {
+            let (reserve_in, reserve_out) = if zero_for_one {
+                (self.reserve_0, self.reserve_1)
+            } else {
+                (self.reserve_1, self.reserve_0)
+            };
+            let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out)?;
+            math::calculate_price_impact(amount_in, amount_out, reserve_in, reserve_out)
+        }
     }
 }
