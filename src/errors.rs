@@ -19,4 +19,6 @@ pub enum Error {
     Overflow                     = 12,
     AlreadyInitialized           = 13,
     NotInitialized               = 14,
+    SlippageTooHigh              = 15,
+    Unauthorized                 = 16,
 }

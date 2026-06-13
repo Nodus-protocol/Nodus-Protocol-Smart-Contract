@@ -17,4 +17,6 @@ pub enum DataKey {
     LpAllowance(Address, Address),
     Locked,
     Initialized,
+    FeeTo,
+    FeeToSetter,
 }

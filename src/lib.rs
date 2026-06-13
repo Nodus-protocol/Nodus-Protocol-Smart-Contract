@@ -105,13 +105,19 @@ pub struct NodusAmm;
 
 #[contractimpl]
 impl NodusAmm {
-    pub fn initialize(env: Env, token_0: Address, token_1: Address) -> Result<(), Error> {
+    pub fn initialize(
+        env: Env,
+        token_0: Address,
+        token_1: Address,
+        fee_to_setter: Address,
+    ) -> Result<(), Error> {
         if env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
             return Err(Error::AlreadyInitialized);
         }
         if token_0 == token_1 { return Err(Error::InvalidTokenPair); }
         env.storage().instance().set(&DataKey::Token0, &token_0);
         env.storage().instance().set(&DataKey::Token1, &token_1);
+        env.storage().instance().set(&DataKey::FeeToSetter, &fee_to_setter);
         env.storage().instance().set(&DataKey::Initialized, &true);
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
         Ok(())
@@ -312,6 +318,185 @@ impl NodusAmm {
         math::get_amount_in(amount_out, reserve_in, reserve_out)
     }
 
+    // ── High-level swap entrypoints ─────────────────────────────────────────
+
+    pub fn swap_exact_tokens_for_tokens(
+        env: Env,
+        from: Address,
+        to: Address,
+        amount_in: i128,
+        amount_out_min: i128,
+        zero_for_one: bool,
+        deadline: u64,
+    ) -> Result<i128, Error> {
+        require_initialized(&env)?;
+        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        lock(&env)?;
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+
+        from.require_auth();
+
+        let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+        let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
+
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
+
+        let (reserve_in, reserve_out, token_in, token_out) = if zero_for_one {
+            (reserve_0, reserve_1, token_0.clone(), token_1.clone())
+        } else {
+            (reserve_1, reserve_0, token_1.clone(), token_0.clone())
+        };
+
+        let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out)
+            .map_err(|e| { unlock(&env); e })?;
+
+        if amount_out < amount_out_min {
+            unlock(&env);
+            return Err(Error::SlippageTooHigh);
+        }
+
+        token_pull(&env, &token_in, &from, amount_in);
+        token_push(&env, &token_out, &to, amount_out);
+
+        let b0 = token_balance(&env, &token_0);
+        let b1 = token_balance(&env, &token_1);
+
+        let (amount_0_in, amount_1_in, amount_0_out, amount_1_out) = if zero_for_one {
+            (amount_in, 0i128, 0i128, amount_out)
+        } else {
+            (0i128, amount_in, amount_out, 0i128)
+        };
+
+        liquidity_pool::verify_k_invariant(b0, b1, amount_0_in, amount_1_in, reserve_0, reserve_1)
+            .map_err(|e| { unlock(&env); e })?;
+
+        update(&env, b0, b1, reserve_0, reserve_1);
+        events::emit_swap(&env, from, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
+        unlock(&env);
+        Ok(amount_out)
+    }
+
+    pub fn swap_tokens_for_exact_tokens(
+        env: Env,
+        from: Address,
+        to: Address,
+        amount_out: i128,
+        amount_in_max: i128,
+        zero_for_one: bool,
+        deadline: u64,
+    ) -> Result<i128, Error> {
+        require_initialized(&env)?;
+        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        lock(&env)?;
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+
+        from.require_auth();
+
+        let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+        let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
+
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
+
+        let (reserve_in, reserve_out, token_in, token_out) = if zero_for_one {
+            (reserve_0, reserve_1, token_0.clone(), token_1.clone())
+        } else {
+            (reserve_1, reserve_0, token_1.clone(), token_0.clone())
+        };
+
+        let amount_in = math::get_amount_in(amount_out, reserve_in, reserve_out)
+            .map_err(|e| { unlock(&env); e })?;
+
+        if amount_in > amount_in_max {
+            unlock(&env);
+            return Err(Error::SlippageTooHigh);
+        }
+
+        token_pull(&env, &token_in, &from, amount_in);
+        token_push(&env, &token_out, &to, amount_out);
+
+        let b0 = token_balance(&env, &token_0);
+        let b1 = token_balance(&env, &token_1);
+
+        let (amount_0_in, amount_1_in, amount_0_out, amount_1_out) = if zero_for_one {
+            (amount_in, 0i128, 0i128, amount_out)
+        } else {
+            (0i128, amount_in, amount_out, 0i128)
+        };
+
+        liquidity_pool::verify_k_invariant(b0, b1, amount_0_in, amount_1_in, reserve_0, reserve_1)
+            .map_err(|e| { unlock(&env); e })?;
+
+        update(&env, b0, b1, reserve_0, reserve_1);
+        events::emit_swap(&env, from, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
+        unlock(&env);
+        Ok(amount_in)
+    }
+
+    pub fn get_spot_price(env: Env, zero_for_one: bool) -> Result<i128, Error> {
+        require_initialized(&env)?;
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
+        if zero_for_one {
+            math::get_spot_price(reserve_0, reserve_1)
+        } else {
+            math::get_spot_price(reserve_1, reserve_0)
+        }
+    }
+
+    pub fn get_price_impact(env: Env, amount_in: i128, zero_for_one: bool) -> Result<i128, Error> {
+        require_initialized(&env)?;
+        let reserve_0 = get_reserve_0(&env);
+        let reserve_1 = get_reserve_1(&env);
+        let (reserve_in, reserve_out) = if zero_for_one {
+            (reserve_0, reserve_1)
+        } else {
+            (reserve_1, reserve_0)
+        };
+        let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out)?;
+        math::calculate_price_impact(amount_in, amount_out, reserve_in, reserve_out)
+    }
+
+    // ── Protocol fee collector ──────────────────────────────────────────────
+
+    pub fn set_fee_to(env: Env, caller: Address, new_fee_to: Option<Address>) -> Result<(), Error> {
+        caller.require_auth();
+        let setter: Address = env.storage().instance()
+            .get(&DataKey::FeeToSetter)
+            .ok_or(Error::NotInitialized)?;
+        if caller != setter {
+            return Err(Error::Unauthorized);
+        }
+        match &new_fee_to {
+            Some(addr) => env.storage().instance().set(&DataKey::FeeTo, addr),
+            None => env.storage().instance().remove(&DataKey::FeeTo),
+        }
+        Ok(())
+    }
+
+    pub fn set_fee_to_setter(env: Env, caller: Address, new_setter: Address) -> Result<(), Error> {
+        caller.require_auth();
+        let setter: Address = env.storage().instance()
+            .get(&DataKey::FeeToSetter)
+            .ok_or(Error::NotInitialized)?;
+        if caller != setter {
+            return Err(Error::Unauthorized);
+        }
+        env.storage().instance().set(&DataKey::FeeToSetter, &new_setter);
+        Ok(())
+    }
+
+    pub fn fee_to(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::FeeTo)
+    }
+
+    pub fn fee_to_setter(env: Env) -> Result<Address, Error> {
+        env.storage().instance()
+            .get(&DataKey::FeeToSetter)
+            .ok_or(Error::NotInitialized)
+    }
+
     // ── LP token interface ──────────────────────────────────────────────────
 
     pub fn lp_balance_of(env: Env, owner: Address) -> i128 {
@@ -327,18 +512,15 @@ impl NodusAmm {
         lp_token::transfer(&env, &from, &to, amount)
     }
 
-    /// Approve `spender` to transfer up to `amount` of the caller's LP tokens.
     pub fn approve_lp(env: Env, owner: Address, spender: Address, amount: i128) -> Result<(), Error> {
         owner.require_auth();
         lp_token::approve(&env, &owner, &spender, amount)
     }
 
-    /// Return the remaining LP-token allowance granted by `owner` to `spender`.
     pub fn lp_allowance(env: Env, owner: Address, spender: Address) -> i128 {
         lp_token::allowance(&env, &owner, &spender)
     }
 
-    /// Transfer LP tokens on behalf of `from` using an existing allowance.
     pub fn transfer_lp_from(
         env: Env,
         spender: Address,
