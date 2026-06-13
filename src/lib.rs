@@ -38,6 +38,11 @@ mod pool {
         k_last: u128,
         lp_token: AccountId,
         locked: bool,
+        /// Optional address that receives the protocol fee share.
+        /// When `None` the protocol fee is off and all fees go to LPs.
+        fee_to: Option<AccountId>,
+        /// The only account allowed to update `fee_to`.
+        fee_to_setter: AccountId,
     }
 
     impl ReentrancyGuard for LiquidityPool {
@@ -55,6 +60,7 @@ mod pool {
             token_0: AccountId,
             token_1: AccountId,
             lp_token: AccountId,
+            fee_to_setter: AccountId,
         ) -> Self {
             assert_ne!(token_0, token_1, "identical token addresses");
             Self {
@@ -68,7 +74,43 @@ mod pool {
                 k_last: 0,
                 lp_token,
                 locked: false,
+                fee_to: None,
+                fee_to_setter,
             }
+        }
+
+        /// Update the address that receives the protocol fee.
+        /// Only callable by the current `fee_to_setter`.
+        #[ink(message)]
+        pub fn set_fee_to(&mut self, new_fee_to: Option<AccountId>) -> Result<(), Error> {
+            if self.env().caller() != self.fee_to_setter {
+                return Err(Error::Unauthorized);
+            }
+            self.fee_to = new_fee_to;
+            Ok(())
+        }
+
+        /// Transfer the setter role to a new account.
+        /// Only callable by the current `fee_to_setter`.
+        #[ink(message)]
+        pub fn set_fee_to_setter(&mut self, new_setter: AccountId) -> Result<(), Error> {
+            if self.env().caller() != self.fee_to_setter {
+                return Err(Error::Unauthorized);
+            }
+            self.fee_to_setter = new_setter;
+            Ok(())
+        }
+
+        /// Returns the current protocol fee recipient (None = fee off).
+        #[ink(message)]
+        pub fn fee_to(&self) -> Option<AccountId> {
+            self.fee_to
+        }
+
+        /// Returns the account authorised to change `fee_to`.
+        #[ink(message)]
+        pub fn fee_to_setter(&self) -> AccountId {
+            self.fee_to_setter
         }
 
         fn update(
