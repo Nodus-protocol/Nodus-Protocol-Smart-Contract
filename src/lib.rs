@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(clippy::too_many_arguments)]
 use soroban_sdk::{
     contract, contractimpl,
     token::Client as TokenClient,
@@ -153,7 +154,7 @@ impl NodusAmm {
                 amount_0_desired, amount_1_desired,
                 amount_0_min, amount_1_min,
                 reserve_0, reserve_1,
-            ).map_err(|e| { unlock(&env); e })?
+            ).inspect_err(|_| unlock(&env))?
         };
 
         token_pull(&env, &token_0, &from, amount_0);
@@ -163,20 +164,20 @@ impl NodusAmm {
 
         let liquidity = if total_supply == 0 {
             let initial = liquidity_pool::calculate_initial_liquidity(amount_0, amount_1)
-                .map_err(|e| { unlock(&env); e })?;
+                .inspect_err(|_| unlock(&env))?;
             lp_token::mint(&env, &dead_address(&env), math::MINIMUM_LIQUIDITY)
-                .map_err(|e| { unlock(&env); e })?;
+                .inspect_err(|_| unlock(&env))?;
             initial
         } else {
             liquidity_pool::calculate_liquidity_to_mint(
                 amount_0, amount_1, reserve_0, reserve_1, total_supply,
-            ).map_err(|e| { unlock(&env); e })?
+            ).inspect_err(|_| unlock(&env))?
         };
 
         if liquidity == 0 { unlock(&env); return Err(Error::InsufficientLiquidityMinted); }
 
         lp_token::mint(&env, &to, liquidity)
-            .map_err(|e| { unlock(&env); e })?;
+            .inspect_err(|_| unlock(&env))?;
 
         let b0 = token_balance(&env, &token_0);
         let b1 = token_balance(&env, &token_1);
@@ -212,7 +213,7 @@ impl NodusAmm {
 
         let (amount_0, amount_1) = liquidity_pool::calculate_withdrawal_amounts(
             liquidity, reserve_0, reserve_1, total_supply,
-        ).map_err(|e| { unlock(&env); e })?;
+        ).inspect_err(|_| unlock(&env))?;
 
         if amount_0 < amount_0_min || amount_1 < amount_1_min {
             unlock(&env);
@@ -220,7 +221,7 @@ impl NodusAmm {
         }
 
         lp_token::burn(&env, &from, liquidity)
-            .map_err(|e| { unlock(&env); e })?;
+            .inspect_err(|_| unlock(&env))?;
 
         token_push(&env, &token_0, &to, amount_0);
         token_push(&env, &token_1, &to, amount_1);
@@ -278,7 +279,7 @@ impl NodusAmm {
             balance_0, balance_1,
             amount_0_in, amount_1_in,
             reserve_0, reserve_1,
-        ).map_err(|e| { unlock(&env); e })?;
+        ).inspect_err(|_| unlock(&env))?;
 
         update(&env, balance_0, balance_1, reserve_0, reserve_1);
 
@@ -349,7 +350,7 @@ impl NodusAmm {
         };
 
         let amount_out = math::get_amount_out(amount_in, reserve_in, reserve_out)
-            .map_err(|e| { unlock(&env); e })?;
+            .inspect_err(|_| unlock(&env))?;
 
         if amount_out < amount_out_min {
             unlock(&env);
@@ -369,7 +370,7 @@ impl NodusAmm {
         };
 
         liquidity_pool::verify_k_invariant(b0, b1, amount_0_in, amount_1_in, reserve_0, reserve_1)
-            .map_err(|e| { unlock(&env); e })?;
+            .inspect_err(|_| unlock(&env))?;
 
         update(&env, b0, b1, reserve_0, reserve_1);
         events::emit_swap(&env, from, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
@@ -406,7 +407,7 @@ impl NodusAmm {
         };
 
         let amount_in = math::get_amount_in(amount_out, reserve_in, reserve_out)
-            .map_err(|e| { unlock(&env); e })?;
+            .inspect_err(|_| unlock(&env))?;
 
         if amount_in > amount_in_max {
             unlock(&env);
@@ -426,7 +427,7 @@ impl NodusAmm {
         };
 
         liquidity_pool::verify_k_invariant(b0, b1, amount_0_in, amount_1_in, reserve_0, reserve_1)
-            .map_err(|e| { unlock(&env); e })?;
+            .inspect_err(|_| unlock(&env))?;
 
         update(&env, b0, b1, reserve_0, reserve_1);
         events::emit_swap(&env, from, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
