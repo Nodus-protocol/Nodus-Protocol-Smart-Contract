@@ -1,117 +1,61 @@
-use ink::primitives::AccountId;
+#![no_std]
+use soroban_sdk::Address;
 use crate::errors::Error;
 
-#[ink::trait_definition]
-pub trait ILiquidityPool {
-    #[ink(message)]
+pub trait IAmmPool {
     fn add_liquidity(
-        &mut self,
-        amount_0_desired: u128,
-        amount_1_desired: u128,
-        amount_0_min: u128,
-        amount_1_min: u128,
-        to: AccountId,
+        &self,
+        amount_0_desired: i128,
+        amount_1_desired: i128,
+        amount_0_min: i128,
+        amount_1_min: i128,
+        to: Address,
         deadline: u64,
-    ) -> Result<u128, Error>;
+    ) -> Result<i128, Error>;
 
-    #[ink(message)]
     fn remove_liquidity(
-        &mut self,
-        liquidity: u128,
-        amount_0_min: u128,
-        amount_1_min: u128,
-        to: AccountId,
+        &self,
+        liquidity: i128,
+        amount_0_min: i128,
+        amount_1_min: i128,
+        to: Address,
         deadline: u64,
-    ) -> Result<(u128, u128), Error>;
+    ) -> Result<(i128, i128), Error>;
 
-    #[ink(message)]
     fn swap(
-        &mut self,
-        amount_0_out: u128,
-        amount_1_out: u128,
-        to: AccountId,
+        &self,
+        amount_0_out: i128,
+        amount_1_out: i128,
+        to: Address,
     ) -> Result<(), Error>;
 
-    #[ink(message)]
-    fn sync(&mut self) -> Result<(), Error>;
+    fn sync(&self) -> Result<(), Error>;
 
-    #[ink(message)]
-    fn get_reserves(&self) -> (u128, u128, u64);
+    fn get_reserves(&self) -> (i128, i128, u64);
 
-    #[ink(message)]
-    fn get_amount_out(
-        &self,
-        amount_in: u128,
-        reserve_in: u128,
-        reserve_out: u128,
-    ) -> Result<u128, Error>;
+    fn get_amount_out(&self, amount_in: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error>;
 
-    #[ink(message)]
-    fn get_amount_in(
-        &self,
-        amount_out: u128,
-        reserve_in: u128,
-        reserve_out: u128,
-    ) -> Result<u128, Error>;
+    fn get_amount_in(&self, amount_out: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error>;
 
-    /// High-level swap: sell exactly `amount_in` of token_0 for token_1.
-    /// Reverts with `SlippageTooHigh` if the output falls below `amount_out_min`.
-    /// `deadline` is a block-timestamp guard against stale transactions.
-    #[ink(message)]
     fn swap_exact_tokens_for_tokens(
-        &mut self,
-        amount_in: u128,
-        amount_out_min: u128,
+        &self,
+        amount_in: i128,
+        amount_out_min: i128,
         zero_for_one: bool,
-        to: AccountId,
+        to: Address,
         deadline: u64,
-    ) -> Result<u128, Error>;
+    ) -> Result<i128, Error>;
 
-    /// High-level swap: buy exactly `amount_out` of the output token.
-    /// Reverts with `SlippageTooHigh` if the required input exceeds `amount_in_max`.
-    #[ink(message)]
     fn swap_tokens_for_exact_tokens(
-        &mut self,
-        amount_out: u128,
-        amount_in_max: u128,
+        &self,
+        amount_out: i128,
+        amount_in_max: i128,
         zero_for_one: bool,
-        to: AccountId,
+        to: Address,
         deadline: u64,
-    ) -> Result<u128, Error>;
+    ) -> Result<i128, Error>;
 
-    /// Returns the 1e18-scaled spot price of the pool's token pair.
-    /// `zero_for_one = true` → price of token_0 in terms of token_1.
-    #[ink(message)]
-    fn get_spot_price(&self, zero_for_one: bool) -> Result<u128, Error>;
+    fn get_spot_price(&self, zero_for_one: bool) -> Result<i128, Error>;
 
-    /// Returns price impact in basis points for a hypothetical `amount_in`.
-    #[ink(message)]
-    fn get_price_impact(&self, amount_in: u128, zero_for_one: bool) -> Result<u128, Error>;
-}
-
-#[ink::trait_definition]
-pub trait IPSP22 {
-    #[ink(message)]
-    fn total_supply(&self) -> u128;
-
-    #[ink(message)]
-    fn balance_of(&self, owner: AccountId) -> u128;
-
-    #[ink(message)]
-    fn transfer(&mut self, to: AccountId, value: u128, data: ink::prelude::vec::Vec<u8>) -> Result<(), Error>;
-
-    #[ink(message)]
-    fn transfer_from(
-        &mut self,
-        from: AccountId,
-        to: AccountId,
-        value: u128,
-        data: ink::prelude::vec::Vec<u8>,
-    ) -> Result<(), Error>;
-
-    #[ink(message)]
-    fn approve(&mut self, spender: AccountId, value: u128) -> Result<(), Error>;
-
-    #[ink(message)]
-    fn allowance(&self, owner: AccountId, spender: AccountId) -> u128;
+    fn get_price_impact(&self, amount_in: i128, zero_for_one: bool) -> Result<i128, Error>;
 }

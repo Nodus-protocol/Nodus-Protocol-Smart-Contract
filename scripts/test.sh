@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Running unit tests..."
-cargo test
+echo "Running Soroban contract tests..."
+cargo test --features testutils
 
-echo "Running fuzz tests..."
-cargo test --features fuzzing
+echo "Running math-only tests (no Soroban env)..."
+cargo test math_tests
+cargo test liquidity_pool_tests
+cargo test fuzz_math
 
 echo "All tests passed."

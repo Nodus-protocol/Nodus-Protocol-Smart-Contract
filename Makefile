@@ -1,22 +1,22 @@
-.PHONY: build test coverage deploy-local deploy-testnet lint format clean node help
+.PHONY: build test lint format clean deploy-testnet deploy-mainnet help
 
 help:
-	@echo "Available commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-	    awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	    awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
 
-build: ## Build optimized WASM contract
-	cargo contract build --release
+build: ## Build optimised contract WASM via Stellar CLI
+	stellar contract build
 
-test: ## Run unit and fuzz tests
-	cargo test
-	cargo test --features fuzzing
+test: ## Run all tests (unit + integration; requires testutils feature)
+	cargo test --features testutils
 
-coverage: ## Generate HTML test coverage report (requires cargo-tarpaulin)
-	cargo tarpaulin --out Html
+test-math: ## Run math-only unit tests (no Soroban env needed)
+	cargo test math_tests
+	cargo test liquidity_pool_tests
+	cargo test fuzz_math
 
 lint: ## Run clippy and check formatting
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets --features testutils -- -D warnings
 	cargo fmt -- --check
 
 format: ## Format all source files
@@ -25,11 +25,8 @@ format: ## Format all source files
 clean: ## Remove build artifacts
 	cargo clean
 
-node: ## Start a local substrate-contracts-node for development
-	substrate-contracts-node --dev --tmp
-
-deploy-local: ## Deploy contracts to local node (requires TOKEN_0, TOKEN_1, LP_TOKEN env vars)
-	bash scripts/deploy.sh local
-
-deploy-testnet: ## Deploy contracts to Aleph Zero testnet (requires TOKEN_0, TOKEN_1, LP_TOKEN, SURI)
+deploy-testnet: ## Deploy to Stellar testnet (requires STELLAR_SECRET_KEY env var)
 	bash scripts/deploy.sh testnet
+
+deploy-mainnet: ## Deploy to Stellar mainnet (requires STELLAR_SECRET_KEY env var)
+	bash scripts/deploy.sh mainnet
