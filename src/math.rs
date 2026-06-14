@@ -1,4 +1,3 @@
-#![no_std]
 use crate::errors::Error;
 
 pub const FEE_NUMERATOR: i128 = 997;

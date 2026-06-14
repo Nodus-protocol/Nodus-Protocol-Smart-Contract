@@ -1,4 +1,3 @@
-#![no_std]
 use soroban_sdk::{Address, Env};
 use crate::{errors::Error, storage::DataKey};
 

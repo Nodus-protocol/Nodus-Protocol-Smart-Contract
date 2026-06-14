@@ -1,4 +1,3 @@
-#![no_std]
 #![allow(deprecated)]
 use soroban_sdk::{contracttype, symbol_short, Address, Env};
 

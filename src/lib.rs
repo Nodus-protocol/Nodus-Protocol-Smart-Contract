@@ -3,7 +3,7 @@
 use soroban_sdk::{
     contract, contractimpl,
     token::Client as TokenClient,
-    Address, Env, Symbol,
+    Address, Env,
 };
 
 pub mod errors;

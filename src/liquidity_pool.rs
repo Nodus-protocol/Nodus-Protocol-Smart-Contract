@@ -1,4 +1,3 @@
-#![no_std]
 use crate::{errors::Error, math};
 
 pub fn calculate_liquidity_to_mint(
@@ -17,7 +16,10 @@ pub fn calculate_liquidity_to_mint(
 pub fn calculate_initial_liquidity(amount_0: i128, amount_1: i128) -> Result<i128, Error> {
     let product = amount_0.checked_mul(amount_1).ok_or(Error::Overflow)?;
     let liquidity = math::sqrt(product);
-    liquidity.checked_sub(math::MINIMUM_LIQUIDITY).ok_or(Error::InsufficientLiquidityMinted)
+    if liquidity <= math::MINIMUM_LIQUIDITY {
+        return Err(Error::InsufficientLiquidityMinted);
+    }
+    Ok(liquidity - math::MINIMUM_LIQUIDITY)
 }
 
 pub fn calculate_optimal_amounts(

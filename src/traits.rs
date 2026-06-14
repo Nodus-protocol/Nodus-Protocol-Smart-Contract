@@ -1,4 +1,3 @@
-#![no_std]
 use soroban_sdk::Address;
 use crate::errors::Error;
 
