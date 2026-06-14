@@ -1,14 +1,15 @@
 #![no_std]
-use soroban_sdk::{contractevent, Address, Env};
+#![allow(deprecated)]
+use soroban_sdk::{contracttype, symbol_short, Address, Env};
 
-#[contractevent]
+#[contracttype]
 pub struct MintEvent {
     pub sender: Address,
     pub amount_0: i128,
     pub amount_1: i128,
 }
 
-#[contractevent]
+#[contracttype]
 pub struct BurnEvent {
     pub sender: Address,
     pub amount_0: i128,
@@ -16,7 +17,7 @@ pub struct BurnEvent {
     pub to: Address,
 }
 
-#[contractevent]
+#[contracttype]
 pub struct SwapEvent {
     pub sender: Address,
     pub amount_0_in: i128,
@@ -26,18 +27,18 @@ pub struct SwapEvent {
     pub to: Address,
 }
 
-#[contractevent]
+#[contracttype]
 pub struct SyncEvent {
     pub reserve_0: i128,
     pub reserve_1: i128,
 }
 
 pub fn emit_mint(env: &Env, sender: Address, amount_0: i128, amount_1: i128) {
-    MintEvent { sender, amount_0, amount_1 }.emit(env);
+    env.events().publish((symbol_short!("mint"),), MintEvent { sender, amount_0, amount_1 });
 }
 
 pub fn emit_burn(env: &Env, sender: Address, amount_0: i128, amount_1: i128, to: Address) {
-    BurnEvent { sender, amount_0, amount_1, to }.emit(env);
+    env.events().publish((symbol_short!("burn"),), BurnEvent { sender, amount_0, amount_1, to });
 }
 
 pub fn emit_swap(
@@ -49,9 +50,12 @@ pub fn emit_swap(
     amount_1_out: i128,
     to: Address,
 ) {
-    SwapEvent { sender, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to }.emit(env);
+    env.events().publish(
+        (symbol_short!("swap"),),
+        SwapEvent { sender, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to },
+    );
 }
 
 pub fn emit_sync(env: &Env, reserve_0: i128, reserve_1: i128) {
-    SyncEvent { reserve_0, reserve_1 }.emit(env);
+    env.events().publish((symbol_short!("sync"),), SyncEvent { reserve_0, reserve_1 });
 }
