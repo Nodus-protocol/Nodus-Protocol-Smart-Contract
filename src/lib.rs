@@ -44,7 +44,9 @@ fn is_locked(env: &Env) -> bool {
 }
 
 fn lock(env: &Env) -> Result<(), Error> {
-    if is_locked(env) { return Err(Error::ReentrancyDetected); }
+    if is_locked(env) {
+        return Err(Error::ReentrancyDetected);
+    }
     env.storage().instance().set(&DataKey::Locked, &true);
     Ok(())
 }
@@ -115,7 +117,9 @@ impl NodusAmm {
         if env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
             return Err(Error::AlreadyInitialized);
         }
-        if token_0 == token_1 { return Err(Error::InvalidTokenPair); }
+        if token_0 == token_1 {
+            return Err(Error::InvalidTokenPair);
+        }
         env.storage().instance().set(&DataKey::Token0, &token_0);
         env.storage().instance().set(&DataKey::Token1, &token_1);
         env.storage().instance().set(&DataKey::FeeToSetter, &fee_to_setter);
@@ -135,7 +139,9 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
-        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        if env.ledger().timestamp() > deadline {
+            return Err(Error::Expired);
+        }
         lock(&env)?;
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
@@ -174,7 +180,10 @@ impl NodusAmm {
             ).inspect_err(|_| unlock(&env))?
         };
 
-        if liquidity == 0 { unlock(&env); return Err(Error::InsufficientLiquidityMinted); }
+        if liquidity == 0 {
+            unlock(&env);
+            return Err(Error::InsufficientLiquidityMinted);
+        }
 
         lp_token::mint(&env, &to, liquidity)
             .inspect_err(|_| unlock(&env))?;
@@ -198,7 +207,9 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<(i128, i128), Error> {
         require_initialized(&env)?;
-        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        if env.ledger().timestamp() > deadline {
+            return Err(Error::Expired);
+        }
         lock(&env)?;
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
@@ -261,8 +272,12 @@ impl NodusAmm {
             return Err(Error::InsufficientLiquidity);
         }
 
-        if amount_0_out > 0 { token_push(&env, &token_0, &to, amount_0_out); }
-        if amount_1_out > 0 { token_push(&env, &token_1, &to, amount_1_out); }
+        if amount_0_out > 0 {
+            token_push(&env, &token_0, &to, amount_0_out);
+        }
+        if amount_1_out > 0 {
+            token_push(&env, &token_1, &to, amount_1_out);
+        }
 
         let balance_0 = token_balance(&env, &token_0);
         let balance_1 = token_balance(&env, &token_1);
@@ -311,11 +326,21 @@ impl NodusAmm {
         )
     }
 
-    pub fn get_amount_out(_env: Env, amount_in: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error> {
+    pub fn get_amount_out(
+        _env: Env,
+        amount_in: i128,
+        reserve_in: i128,
+        reserve_out: i128,
+    ) -> Result<i128, Error> {
         math::get_amount_out(amount_in, reserve_in, reserve_out)
     }
 
-    pub fn get_amount_in(_env: Env, amount_out: i128, reserve_in: i128, reserve_out: i128) -> Result<i128, Error> {
+    pub fn get_amount_in(
+        _env: Env,
+        amount_out: i128,
+        reserve_in: i128,
+        reserve_out: i128,
+    ) -> Result<i128, Error> {
         math::get_amount_in(amount_out, reserve_in, reserve_out)
     }
 
@@ -331,7 +356,9 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
-        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        if env.ledger().timestamp() > deadline {
+            return Err(Error::Expired);
+        }
         lock(&env)?;
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
@@ -388,7 +415,9 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
-        if env.ledger().timestamp() > deadline { return Err(Error::Expired); }
+        if env.ledger().timestamp() > deadline {
+            return Err(Error::Expired);
+        }
         lock(&env)?;
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
