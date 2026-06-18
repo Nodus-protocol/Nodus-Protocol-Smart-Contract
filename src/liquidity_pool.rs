@@ -31,14 +31,22 @@ pub fn calculate_optimal_amounts(
     reserve_1: i128,
 ) -> Result<(i128, i128), Error> {
     let amount_1_optimal = amount_0_desired
-        .checked_mul(reserve_1).ok_or(Error::Overflow)? / reserve_0;
+        .checked_mul(reserve_1)
+        .ok_or(Error::Overflow)?
+        / reserve_0;
     if amount_1_optimal <= amount_1_desired {
-        if amount_1_optimal < amount_1_min { return Err(Error::InsufficientLiquidity); }
+        if amount_1_optimal < amount_1_min {
+            return Err(Error::InsufficientLiquidity);
+        }
         return Ok((amount_0_desired, amount_1_optimal));
     }
     let amount_0_optimal = amount_1_desired
-        .checked_mul(reserve_0).ok_or(Error::Overflow)? / reserve_1;
-    if amount_0_optimal < amount_0_min { return Err(Error::InsufficientLiquidity); }
+        .checked_mul(reserve_0)
+        .ok_or(Error::Overflow)?
+        / reserve_1;
+    if amount_0_optimal < amount_0_min {
+        return Err(Error::InsufficientLiquidity);
+    }
     Ok((amount_0_optimal, amount_1_desired))
 }
 
@@ -54,19 +62,31 @@ pub fn calculate_withdrawal_amounts(
 }
 
 pub fn verify_k_invariant(
-    balance_0: i128, balance_1: i128,
-    amount_0_in: i128, amount_1_in: i128,
-    reserve_0: i128, reserve_1: i128,
+    balance_0: i128,
+    balance_1: i128,
+    amount_0_in: i128,
+    amount_1_in: i128,
+    reserve_0: i128,
+    reserve_1: i128,
 ) -> Result<(), Error> {
-    let lhs_0 = balance_0.checked_mul(1_000).ok_or(Error::Overflow)?
+    let lhs_0 = balance_0
+        .checked_mul(1_000)
+        .ok_or(Error::Overflow)?
         .checked_sub(amount_0_in.checked_mul(3).ok_or(Error::Overflow)?)
         .ok_or(Error::KInvariantViolated)?;
-    let lhs_1 = balance_1.checked_mul(1_000).ok_or(Error::Overflow)?
+    let lhs_1 = balance_1
+        .checked_mul(1_000)
+        .ok_or(Error::Overflow)?
         .checked_sub(amount_1_in.checked_mul(3).ok_or(Error::Overflow)?)
         .ok_or(Error::KInvariantViolated)?;
     let lhs = lhs_0.checked_mul(lhs_1).ok_or(Error::Overflow)?;
-    let rhs = reserve_0.checked_mul(reserve_1).ok_or(Error::Overflow)?
-        .checked_mul(1_000_000).ok_or(Error::Overflow)?;
-    if lhs < rhs { return Err(Error::KInvariantViolated); }
+    let rhs = reserve_0
+        .checked_mul(reserve_1)
+        .ok_or(Error::Overflow)?
+        .checked_mul(1_000_000)
+        .ok_or(Error::Overflow)?;
+    if lhs < rhs {
+        return Err(Error::KInvariantViolated);
+    }
     Ok(())
 }

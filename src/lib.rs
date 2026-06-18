@@ -1,15 +1,11 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
-use soroban_sdk::{
-    contract, contractimpl,
-    token::Client as TokenClient,
-    Address, Env,
-};
+use soroban_sdk::{contract, contractimpl, token::Client as TokenClient, Address, Env};
 
 pub mod errors;
 pub mod events;
-pub mod lp_token;
 pub mod liquidity_pool;
+pub mod lp_token;
 pub mod math;
 pub mod storage;
 pub mod traits;
@@ -21,26 +17,43 @@ const INSTANCE_TTL_THRESHOLD: u32 = 100;
 const INSTANCE_TTL_BUMP: u32 = 500;
 
 fn require_initialized(env: &Env) -> Result<(), Error> {
-    if !env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
+    if !env
+        .storage()
+        .instance()
+        .get::<DataKey, bool>(&DataKey::Initialized)
+        .unwrap_or(false)
+    {
         return Err(Error::NotInitialized);
     }
     Ok(())
 }
 
 fn get_reserve_0(env: &Env) -> i128 {
-    env.storage().instance().get(&DataKey::Reserve0).unwrap_or(0)
+    env.storage()
+        .instance()
+        .get(&DataKey::Reserve0)
+        .unwrap_or(0)
 }
 
 fn get_reserve_1(env: &Env) -> i128 {
-    env.storage().instance().get(&DataKey::Reserve1).unwrap_or(0)
+    env.storage()
+        .instance()
+        .get(&DataKey::Reserve1)
+        .unwrap_or(0)
 }
 
 fn get_timestamp_last(env: &Env) -> u64 {
-    env.storage().instance().get(&DataKey::TimestampLast).unwrap_or(0)
+    env.storage()
+        .instance()
+        .get(&DataKey::TimestampLast)
+        .unwrap_or(0)
 }
 
 fn is_locked(env: &Env) -> bool {
-    env.storage().instance().get(&DataKey::Locked).unwrap_or(false)
+    env.storage()
+        .instance()
+        .get(&DataKey::Locked)
+        .unwrap_or(false)
 }
 
 fn lock(env: &Env) -> Result<(), Error> {
@@ -60,10 +73,16 @@ fn update(env: &Env, balance_0: i128, balance_1: i128, reserve_0: i128, reserve_
     let time_elapsed = timestamp.saturating_sub(get_timestamp_last(env));
 
     if time_elapsed > 0 && reserve_0 > 0 && reserve_1 > 0 {
-        let acc_0: u128 = env.storage().instance()
-            .get(&DataKey::Price0CumulativeLast).unwrap_or(0u128);
-        let acc_1: u128 = env.storage().instance()
-            .get(&DataKey::Price1CumulativeLast).unwrap_or(0u128);
+        let acc_0: u128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Price0CumulativeLast)
+            .unwrap_or(0u128);
+        let acc_1: u128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Price1CumulativeLast)
+            .unwrap_or(0u128);
         let price_0 = ((reserve_1 as u128) << 32) / (reserve_0 as u128);
         let price_1 = ((reserve_0 as u128) << 32) / (reserve_1 as u128);
         env.storage().instance().set(
@@ -78,7 +97,9 @@ fn update(env: &Env, balance_0: i128, balance_1: i128, reserve_0: i128, reserve_
 
     env.storage().instance().set(&DataKey::Reserve0, &balance_0);
     env.storage().instance().set(&DataKey::Reserve1, &balance_1);
-    env.storage().instance().set(&DataKey::TimestampLast, &timestamp);
+    env.storage()
+        .instance()
+        .set(&DataKey::TimestampLast, &timestamp);
     events::emit_sync(env, balance_0, balance_1);
 }
 
@@ -114,7 +135,12 @@ impl NodusAmm {
         token_1: Address,
         fee_to_setter: Address,
     ) -> Result<(), Error> {
-        if env.storage().instance().get::<DataKey, bool>(&DataKey::Initialized).unwrap_or(false) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::Initialized)
+            .unwrap_or(false)
+        {
             return Err(Error::AlreadyInitialized);
         }
         if token_0 == token_1 {
@@ -122,9 +148,13 @@ impl NodusAmm {
         }
         env.storage().instance().set(&DataKey::Token0, &token_0);
         env.storage().instance().set(&DataKey::Token1, &token_1);
-        env.storage().instance().set(&DataKey::FeeToSetter, &fee_to_setter);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeToSetter, &fee_to_setter);
         env.storage().instance().set(&DataKey::Initialized, &true);
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
         Ok(())
     }
 
@@ -143,7 +173,9 @@ impl NodusAmm {
             return Err(Error::Expired);
         }
         lock(&env)?;
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         from.require_auth();
 
@@ -157,10 +189,14 @@ impl NodusAmm {
             (amount_0_desired, amount_1_desired)
         } else {
             liquidity_pool::calculate_optimal_amounts(
-                amount_0_desired, amount_1_desired,
-                amount_0_min, amount_1_min,
-                reserve_0, reserve_1,
-            ).inspect_err(|_| unlock(&env))?
+                amount_0_desired,
+                amount_1_desired,
+                amount_0_min,
+                amount_1_min,
+                reserve_0,
+                reserve_1,
+            )
+            .inspect_err(|_| unlock(&env))?
         };
 
         token_pull(&env, &token_0, &from, amount_0);
@@ -176,8 +212,13 @@ impl NodusAmm {
             initial
         } else {
             liquidity_pool::calculate_liquidity_to_mint(
-                amount_0, amount_1, reserve_0, reserve_1, total_supply,
-            ).inspect_err(|_| unlock(&env))?
+                amount_0,
+                amount_1,
+                reserve_0,
+                reserve_1,
+                total_supply,
+            )
+            .inspect_err(|_| unlock(&env))?
         };
 
         if liquidity == 0 {
@@ -185,8 +226,7 @@ impl NodusAmm {
             return Err(Error::InsufficientLiquidityMinted);
         }
 
-        lp_token::mint(&env, &to, liquidity)
-            .inspect_err(|_| unlock(&env))?;
+        lp_token::mint(&env, &to, liquidity).inspect_err(|_| unlock(&env))?;
 
         let b0 = token_balance(&env, &token_0);
         let b1 = token_balance(&env, &token_1);
@@ -211,7 +251,9 @@ impl NodusAmm {
             return Err(Error::Expired);
         }
         lock(&env)?;
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         from.require_auth();
 
@@ -223,16 +265,19 @@ impl NodusAmm {
         let reserve_1 = get_reserve_1(&env);
 
         let (amount_0, amount_1) = liquidity_pool::calculate_withdrawal_amounts(
-            liquidity, reserve_0, reserve_1, total_supply,
-        ).inspect_err(|_| unlock(&env))?;
+            liquidity,
+            reserve_0,
+            reserve_1,
+            total_supply,
+        )
+        .inspect_err(|_| unlock(&env))?;
 
         if amount_0 < amount_0_min || amount_1 < amount_1_min {
             unlock(&env);
             return Err(Error::InsufficientLiquidityBurned);
         }
 
-        lp_token::burn(&env, &from, liquidity)
-            .inspect_err(|_| unlock(&env))?;
+        lp_token::burn(&env, &from, liquidity).inspect_err(|_| unlock(&env))?;
 
         token_push(&env, &token_0, &to, amount_0);
         token_push(&env, &token_1, &to, amount_1);
@@ -254,7 +299,9 @@ impl NodusAmm {
     ) -> Result<(), Error> {
         require_initialized(&env)?;
         lock(&env)?;
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         if amount_0_out == 0 && amount_1_out == 0 {
             unlock(&env);
@@ -291,22 +338,36 @@ impl NodusAmm {
         }
 
         liquidity_pool::verify_k_invariant(
-            balance_0, balance_1,
-            amount_0_in, amount_1_in,
-            reserve_0, reserve_1,
-        ).inspect_err(|_| unlock(&env))?;
+            balance_0,
+            balance_1,
+            amount_0_in,
+            amount_1_in,
+            reserve_0,
+            reserve_1,
+        )
+        .inspect_err(|_| unlock(&env))?;
 
         update(&env, balance_0, balance_1, reserve_0, reserve_1);
 
         let caller = env.current_contract_address();
-        events::emit_swap(&env, caller, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
+        events::emit_swap(
+            &env,
+            caller,
+            amount_0_in,
+            amount_1_in,
+            amount_0_out,
+            amount_1_out,
+            to,
+        );
         unlock(&env);
         Ok(())
     }
 
     pub fn sync(env: Env) -> Result<(), Error> {
         require_initialized(&env)?;
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
         let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
         let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
         let b0 = token_balance(&env, &token_0);
@@ -316,13 +377,23 @@ impl NodusAmm {
     }
 
     pub fn get_reserves(env: Env) -> (i128, i128, u64) {
-        (get_reserve_0(&env), get_reserve_1(&env), get_timestamp_last(&env))
+        (
+            get_reserve_0(&env),
+            get_reserve_1(&env),
+            get_timestamp_last(&env),
+        )
     }
 
     pub fn get_price_cumulative(env: Env) -> (u128, u128) {
         (
-            env.storage().instance().get(&DataKey::Price0CumulativeLast).unwrap_or(0u128),
-            env.storage().instance().get(&DataKey::Price1CumulativeLast).unwrap_or(0u128),
+            env.storage()
+                .instance()
+                .get(&DataKey::Price0CumulativeLast)
+                .unwrap_or(0u128),
+            env.storage()
+                .instance()
+                .get(&DataKey::Price1CumulativeLast)
+                .unwrap_or(0u128),
         )
     }
 
@@ -360,7 +431,9 @@ impl NodusAmm {
             return Err(Error::Expired);
         }
         lock(&env)?;
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         from.require_auth();
 
@@ -400,7 +473,15 @@ impl NodusAmm {
             .inspect_err(|_| unlock(&env))?;
 
         update(&env, b0, b1, reserve_0, reserve_1);
-        events::emit_swap(&env, from, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
+        events::emit_swap(
+            &env,
+            from,
+            amount_0_in,
+            amount_1_in,
+            amount_0_out,
+            amount_1_out,
+            to,
+        );
         unlock(&env);
         Ok(amount_out)
     }
@@ -419,7 +500,9 @@ impl NodusAmm {
             return Err(Error::Expired);
         }
         lock(&env)?;
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
 
         from.require_auth();
 
@@ -459,7 +542,15 @@ impl NodusAmm {
             .inspect_err(|_| unlock(&env))?;
 
         update(&env, b0, b1, reserve_0, reserve_1);
-        events::emit_swap(&env, from, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to);
+        events::emit_swap(
+            &env,
+            from,
+            amount_0_in,
+            amount_1_in,
+            amount_0_out,
+            amount_1_out,
+            to,
+        );
         unlock(&env);
         Ok(amount_in)
     }
@@ -492,7 +583,9 @@ impl NodusAmm {
 
     pub fn set_fee_to(env: Env, caller: Address, new_fee_to: Option<Address>) -> Result<(), Error> {
         caller.require_auth();
-        let setter: Address = env.storage().instance()
+        let setter: Address = env
+            .storage()
+            .instance()
             .get(&DataKey::FeeToSetter)
             .ok_or(Error::NotInitialized)?;
         if caller != setter {
@@ -507,13 +600,17 @@ impl NodusAmm {
 
     pub fn set_fee_to_setter(env: Env, caller: Address, new_setter: Address) -> Result<(), Error> {
         caller.require_auth();
-        let setter: Address = env.storage().instance()
+        let setter: Address = env
+            .storage()
+            .instance()
             .get(&DataKey::FeeToSetter)
             .ok_or(Error::NotInitialized)?;
         if caller != setter {
             return Err(Error::Unauthorized);
         }
-        env.storage().instance().set(&DataKey::FeeToSetter, &new_setter);
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeToSetter, &new_setter);
         Ok(())
     }
 
@@ -522,7 +619,8 @@ impl NodusAmm {
     }
 
     pub fn fee_to_setter(env: Env) -> Result<Address, Error> {
-        env.storage().instance()
+        env.storage()
+            .instance()
             .get(&DataKey::FeeToSetter)
             .ok_or(Error::NotInitialized)
     }
@@ -542,7 +640,12 @@ impl NodusAmm {
         lp_token::transfer(&env, &from, &to, amount)
     }
 
-    pub fn approve_lp(env: Env, owner: Address, spender: Address, amount: i128) -> Result<(), Error> {
+    pub fn approve_lp(
+        env: Env,
+        owner: Address,
+        spender: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
         owner.require_auth();
         lp_token::approve(&env, &owner, &spender, amount)
     }

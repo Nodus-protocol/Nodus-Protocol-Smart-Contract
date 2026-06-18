@@ -1,8 +1,11 @@
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod integration {
-    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env};
     use nodus_amm::{NodusAmm, NodusAmmClient};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env,
+    };
 
     fn setup_initialized() -> (Env, Address, Address, Address) {
         let env = Env::default();
@@ -61,7 +64,9 @@ mod integration {
         env.ledger().set_timestamp(5_000);
         let from = Address::generate(&env);
         let to = Address::generate(&env);
-        assert!(client.try_remove_liquidity(&from, &to, &100, &0, &0, &1_000).is_err());
+        assert!(client
+            .try_remove_liquidity(&from, &to, &100, &0, &0, &1_000)
+            .is_err());
     }
 
     #[test]

@@ -33,11 +33,26 @@ pub struct SyncEvent {
 }
 
 pub fn emit_mint(env: &Env, sender: Address, amount_0: i128, amount_1: i128) {
-    env.events().publish((symbol_short!("mint"),), MintEvent { sender, amount_0, amount_1 });
+    env.events().publish(
+        (symbol_short!("mint"),),
+        MintEvent {
+            sender,
+            amount_0,
+            amount_1,
+        },
+    );
 }
 
 pub fn emit_burn(env: &Env, sender: Address, amount_0: i128, amount_1: i128, to: Address) {
-    env.events().publish((symbol_short!("burn"),), BurnEvent { sender, amount_0, amount_1, to });
+    env.events().publish(
+        (symbol_short!("burn"),),
+        BurnEvent {
+            sender,
+            amount_0,
+            amount_1,
+            to,
+        },
+    );
 }
 
 pub fn emit_swap(
@@ -51,10 +66,23 @@ pub fn emit_swap(
 ) {
     env.events().publish(
         (symbol_short!("swap"),),
-        SwapEvent { sender, amount_0_in, amount_1_in, amount_0_out, amount_1_out, to },
+        SwapEvent {
+            sender,
+            amount_0_in,
+            amount_1_in,
+            amount_0_out,
+            amount_1_out,
+            to,
+        },
     );
 }
 
 pub fn emit_sync(env: &Env, reserve_0: i128, reserve_1: i128) {
-    env.events().publish((symbol_short!("sync"),), SyncEvent { reserve_0, reserve_1 });
+    env.events().publish(
+        (symbol_short!("sync"),),
+        SyncEvent {
+            reserve_0,
+            reserve_1,
+        },
+    );
 }
