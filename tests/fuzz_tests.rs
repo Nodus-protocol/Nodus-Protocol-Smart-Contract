@@ -13,7 +13,10 @@ mod fuzz_math {
         ];
         for &(amount_in, reserve_in, reserve_out) in cases {
             if let Ok(out) = math::get_amount_out(amount_in, reserve_in, reserve_out) {
-                assert!(out < reserve_out, "output must be strictly less than reserve_out");
+                assert!(
+                    out < reserve_out,
+                    "output must be strictly less than reserve_out"
+                );
                 assert!(out > 0, "output must be positive");
             }
         }
@@ -21,10 +24,17 @@ mod fuzz_math {
 
     #[test]
     fn fuzz_sqrt_is_integer_floor() {
-        for n in [0i128, 1, 2, 3, 4, 8, 15, 16, 99, 100, 10_000, 999_999, 1_000_000] {
+        for n in [
+            0i128, 1, 2, 3, 4, 8, 15, 16, 99, 100, 10_000, 999_999, 1_000_000,
+        ] {
             let s = math::sqrt(n);
             assert!(s * s <= n, "sqrt({n}) = {s}: s^2 must be <= n");
-            if s > 0 { assert!((s + 1) * (s + 1) > n, "sqrt({n}) = {s}: (s+1)^2 must exceed n"); }
+            if s > 0 {
+                assert!(
+                    (s + 1) * (s + 1) > n,
+                    "sqrt({n}) = {s}: (s+1)^2 must exceed n"
+                );
+            }
         }
     }
 
@@ -33,7 +43,10 @@ mod fuzz_math {
         let reserve = 1_000_000i128;
         for amount_in in [100i128, 1_000, 10_000, 100_000] {
             let out = math::get_amount_out(amount_in, reserve, reserve).unwrap();
-            assert!(out < amount_in, "output must be less than input due to 0.3% fee");
+            assert!(
+                out < amount_in,
+                "output must be less than input due to 0.3% fee"
+            );
         }
     }
 
@@ -44,7 +57,10 @@ mod fuzz_math {
         for desired_out in [100i128, 500, 1_000, 10_000] {
             let amount_in = math::get_amount_in(desired_out, reserve_in, reserve_out).unwrap();
             let actual_out = math::get_amount_out(amount_in, reserve_in, reserve_out).unwrap();
-            assert!(actual_out >= desired_out, "roundtrip must produce at least desired_out");
+            assert!(
+                actual_out >= desired_out,
+                "roundtrip must produce at least desired_out"
+            );
         }
     }
 

@@ -82,17 +82,16 @@ mod liquidity_pool_tests {
 
     #[test]
     fn calculate_liquidity_to_mint_proportional() {
-        let liq = liquidity_pool::calculate_liquidity_to_mint(
-            1_000, 1_000, 10_000, 10_000, 100_000,
-        ).unwrap();
+        let liq =
+            liquidity_pool::calculate_liquidity_to_mint(1_000, 1_000, 10_000, 10_000, 100_000)
+                .unwrap();
         assert_eq!(liq, 10_000);
     }
 
     #[test]
     fn calculate_withdrawal_amounts_proportional() {
-        let (a0, a1) = liquidity_pool::calculate_withdrawal_amounts(
-            5_000, 100_000, 200_000, 10_000,
-        ).unwrap();
+        let (a0, a1) =
+            liquidity_pool::calculate_withdrawal_amounts(5_000, 100_000, 200_000, 10_000).unwrap();
         assert_eq!(a0, 50_000);
         assert_eq!(a1, 100_000);
     }
@@ -115,9 +114,8 @@ mod liquidity_pool_tests {
 
     #[test]
     fn optimal_amounts_preserves_ratio() {
-        let (a0, a1) = liquidity_pool::calculate_optimal_amounts(
-            2_000, 2_000, 0, 0, 10_000, 20_000,
-        ).unwrap();
+        let (a0, a1) =
+            liquidity_pool::calculate_optimal_amounts(2_000, 2_000, 0, 0, 10_000, 20_000).unwrap();
         assert!(a0 > 0 && a1 > 0 && a0 <= 2_000 && a1 <= 2_000);
     }
 }
@@ -125,8 +123,11 @@ mod liquidity_pool_tests {
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod soroban_contract_tests {
-    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env};
     use nodus_amm::{NodusAmm, NodusAmmClient};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env,
+    };
 
     fn setup() -> (Env, Address) {
         let env = Env::default();
@@ -187,7 +188,9 @@ mod soroban_contract_tests {
         env.ledger().set_timestamp(2_000);
         let from = Address::generate(&env);
         let to = Address::generate(&env);
-        assert!(client.try_add_liquidity(&from, &to, &1_000, &1_000, &0, &0, &500).is_err());
+        assert!(client
+            .try_add_liquidity(&from, &to, &1_000, &1_000, &0, &0, &500)
+            .is_err());
     }
 
     #[test]
