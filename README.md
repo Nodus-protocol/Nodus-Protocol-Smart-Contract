@@ -113,6 +113,9 @@ cargo install --locked stellar-cli --features opt
 make build
 # or: stellar contract build
 
+# Build output used by the deploy scripts
+target/wasm32-unknown-unknown/release/nodus_amm.wasm
+
 # Run tests
 make test
 
@@ -133,6 +136,12 @@ STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... make deploy-mainnet
 ```
 
 The deploy script uploads the WASM, deploys a new contract instance, and calls `initialize`.
+
+The crate name is `nodus-amm`, so the generated WASM artifact uses the
+underscore form `nodus_amm.wasm`. This differs from the repository name
+(`Nodus-Protocol-Smart-Contract`) by design. Keep deploy scripts and manual
+commands pointed at `nodus_amm.wasm` unless the crate name is intentionally
+changed.
 
 ---
 
