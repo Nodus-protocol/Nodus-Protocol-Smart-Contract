@@ -17,10 +17,10 @@ test-math: ## Run math-only unit tests (no Soroban env needed)
 
 lint: ## Run clippy and check formatting
 	cargo clippy --all-targets --features testutils -- -D warnings
-	cargo fmt -- --check
+	cargo fmt --all --check
 
 format: ## Format all source files
-	cargo fmt
+	cargo fmt --all
 
 clean: ## Remove build artifacts
 	cargo clean
