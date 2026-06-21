@@ -10,6 +10,6 @@ fi
 
 stellar contract build
 
-WASM="target/wasm32-unknown-unknown/release/nodus_amm.wasm"
+WASM="target/wasm32-unknown-unknown/release/nodus_protocol_amm.wasm"
 echo "Build complete: $WASM"
 ls -lh "$WASM"

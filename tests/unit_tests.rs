@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod math_tests {
-    use nodus_amm::math;
+    use nodus_protocol_amm::math;
 
     #[test]
     fn get_amount_out_standard_case() {
@@ -67,7 +67,7 @@ mod math_tests {
 
 #[cfg(test)]
 mod liquidity_pool_tests {
-    use nodus_amm::liquidity_pool;
+    use nodus_protocol_amm::liquidity_pool;
 
     #[test]
     fn calculate_initial_liquidity_geometric_mean() {
@@ -101,7 +101,7 @@ mod liquidity_pool_tests {
         let r0 = 100_000i128;
         let r1 = 100_000i128;
         let amount_in = 1_000i128;
-        let amount_out = nodus_amm::math::get_amount_out(amount_in, r0, r1).unwrap();
+        let amount_out = nodus_protocol_amm::math::get_amount_out(amount_in, r0, r1).unwrap();
         let b0 = r0 + amount_in;
         let b1 = r1 - amount_out;
         assert!(liquidity_pool::verify_k_invariant(b0, b1, amount_in, 0, r0, r1).is_ok());
@@ -123,7 +123,7 @@ mod liquidity_pool_tests {
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod soroban_contract_tests {
-    use nodus_amm::{NodusAmm, NodusAmmClient};
+    use nodus_protocol_amm::{NodusAmm, NodusAmmClient};
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
         Address, Env,
