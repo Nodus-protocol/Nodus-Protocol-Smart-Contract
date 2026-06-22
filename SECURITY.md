@@ -16,12 +16,33 @@ Report them privately by opening a
 
 Include as much of the following information as possible:
 
-- Type of vulnerability (e.g. buffer overflow, SQL injection, cross-site scripting)
+- Type of vulnerability, using the smart contract categories below where possible
 - Full paths of source files related to the vulnerability
 - Location of the affected source code (tag, branch, commit, or direct URL)
 - Step-by-step instructions to reproduce the issue
 - Proof-of-concept or exploit code (if possible)
 - Impact of the vulnerability and how an attacker might exploit it
+
+## Smart Contract Vulnerability Categories
+
+When reporting issues with the Soroban AMM contract, please include the most
+relevant category:
+
+| Category | Description | Example |
+|----------|-------------|---------|
+| Reentrancy | Cross-contract callbacks re-enter pool logic before state is committed | Token transfer callback attempts to call `swap` again |
+| AMM Math | Overflow, underflow, rounding, or precision loss in reserve calculations | Constant-product invariant check overflows at large reserves |
+| Price Manipulation | Flash-loan or multi-step reserve manipulation that extracts value | Temporary reserve imbalance lets an attacker receive excess output |
+| LP Token Accounting | Incorrect mint, burn, or share calculation for liquidity providers | Tiny deposits mint zero shares or withdrawals burn the wrong amount |
+| Allowance Race | Approval or transfer-from ordering creates a front-running window | Spender uses an old allowance before a new one is applied |
+| Deadline Bypass | Expired transactions are accepted or checked against the wrong clock | Swap succeeds after the user-provided deadline |
+| Storage Expiry | Soroban storage TTL behavior can remove required contract state | Pool or LP balance data expires before a valid operation |
+| Initialization | Contract can be re-initialized or initialized with invalid state | Admin, token, or reserve addresses are missing or duplicated |
+
+This contract is not yet audited. We do not currently operate a formal bug
+bounty program, but critical vulnerability reporters will be credited in the
+project's security advisories and acknowledged in release notes unless they
+prefer to remain anonymous.
 
 We will acknowledge your report within **48 hours** and aim to release a patch
 within **14 days** for critical issues. You will be credited in the release
