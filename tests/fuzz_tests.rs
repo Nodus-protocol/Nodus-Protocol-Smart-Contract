@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod fuzz_math {
-    use nodus_amm::math;
+    use nodus_protocol_amm::math;
 
     #[test]
     fn fuzz_amount_out_never_exceeds_reserve_out() {
@@ -66,7 +66,7 @@ mod fuzz_math {
 
     #[test]
     fn fuzz_k_invariant_holds_across_swap_sizes() {
-        use nodus_amm::liquidity_pool;
+        use nodus_protocol_amm::liquidity_pool;
         let reserve = 1_000_000i128;
         for amount_in in [100i128, 1_000, 5_000, 50_000, 200_000] {
             let amount_out = math::get_amount_out(amount_in, reserve, reserve).unwrap();

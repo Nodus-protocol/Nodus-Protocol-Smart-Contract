@@ -24,7 +24,7 @@ if ! command -v stellar &>/dev/null; then
     exit 1
 fi
 
-WASM="target/wasm32-unknown-unknown/release/nodus_amm.wasm"
+WASM="target/wasm32-unknown-unknown/release/nodus_protocol_amm.wasm"
 if [ ! -f "$WASM" ]; then
     echo "WASM not found. Run: make build"
     exit 1
