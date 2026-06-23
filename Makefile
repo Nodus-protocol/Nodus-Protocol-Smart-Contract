@@ -16,11 +16,11 @@ test-math: ## Run math-only unit tests (no Soroban env needed)
 	cargo test fuzz_math
 
 lint: ## Run clippy and check formatting
-	cargo clippy --all-targets --features testutils -- -D warnings && \
-	cargo fmt -- --check
+	cargo clippy --all-targets --features testutils -- -D warnings
+	cargo fmt --all --check
 
 format: ## Format all source files
-	cargo fmt
+	cargo fmt --all
 
 clean: ## Remove build artifacts
 	cargo clean
