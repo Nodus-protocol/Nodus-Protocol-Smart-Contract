@@ -1,7 +1,7 @@
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod integration {
-    use nodus_amm::{NodusAmm, NodusAmmClient};
+    use nodus_protocol_amm::{NodusAmm, NodusAmmClient};
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
         Address, Env,

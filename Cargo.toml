@@ -1,5 +1,5 @@
 [package]
-name = "nodus-amm"
+name = "nodus-protocol-amm"
 version = "0.1.0"
 authors = ["Nodus Protocol Team"]
 edition = "2021"

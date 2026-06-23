@@ -22,8 +22,8 @@ jobs:
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nodus-amm-wasm
-          path: target/wasm32v1-none/release/nodus_amm.wasm
+          name: nodus-protocol-amm-wasm
+          path: target/wasm32v1-none/release/nodus_protocol_amm.wasm
 
   test:
     name: Test (unit + integration)
