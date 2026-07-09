@@ -196,6 +196,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -274,6 +275,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<(i128, i128), Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -454,6 +456,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -523,6 +526,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
