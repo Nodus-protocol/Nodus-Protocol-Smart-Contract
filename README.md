@@ -39,21 +39,25 @@ LP tokens are tracked internally in the pool's persistent storage — no separat
 
 ## Repository Structure
 
-```
-src/
-  lib.rs              Contract entry point — all public functions
-  liquidity_pool.rs   Pool math: optimal amounts, K-invariant, LP mint/burn
-  lp_token.rs         Internal LP ledger: mint, burn, transfer, approve, allowance
-  math.rs             AMM formulas: get_amount_out, get_amount_in, sqrt
-  storage.rs          DataKey enum for all instance + persistent storage keys
-  events.rs           Soroban event wrappers: Mint, Burn, Swap, Sync
-  errors.rs           Stable #[contracterror] enum
-  traits.rs           IAmmPool interface definition
+This is a Cargo workspace; each Soroban contract is its own crate under
+`contracts/`.
 
-tests/
-  unit_tests.rs       Pure math + liquidity-pool unit tests (no Soroban env)
-  integration_tests.rs Soroban testenv contract interaction tests
-  fuzz_tests.rs       Property tests: k-invariant, sqrt floor, fee monotonicity
+```
+contracts/
+  pool/
+    src/
+      lib.rs              Contract entry point — all public functions
+      liquidity_pool.rs   Pool math: optimal amounts, K-invariant, LP mint/burn
+      lp_token.rs         Internal LP ledger: mint, burn, transfer, approve, allowance
+      math.rs             AMM formulas: get_amount_out, get_amount_in, sqrt
+      storage.rs          DataKey enum for all instance + persistent storage keys
+      events.rs           Soroban event wrappers: Mint, Burn, Swap, Sync
+      errors.rs           Stable #[contracterror] enum
+      traits.rs           IAmmPool interface definition
+    tests/
+      unit_tests.rs       Pure math + liquidity-pool unit tests (no Soroban env)
+      integration_tests.rs Soroban testenv contract interaction tests
+      fuzz_tests.rs       Property tests: k-invariant, sqrt floor, fee monotonicity
 ```
 
 ---
@@ -114,7 +118,7 @@ make build
 # or: stellar contract build
 
 # Build output used by the deploy scripts
-target/wasm32-unknown-unknown/release/nodus_amm.wasm
+target/wasm32v1-none/release/nodus_protocol_amm.wasm
 
 # Run tests
 make test
@@ -137,11 +141,10 @@ STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... make deploy-mainnet
 
 The deploy script uploads the WASM, deploys a new contract instance, and calls `initialize`.
 
-The crate name is `nodus-amm`, so the generated WASM artifact uses the
-underscore form `nodus_amm.wasm`. This differs from the repository name
-(`Nodus-Protocol-Smart-Contract`) by design. Keep deploy scripts and manual
-commands pointed at `nodus_amm.wasm` unless the crate name is intentionally
-changed.
+The pool crate is named `nodus-protocol-amm`, so the generated WASM artifact
+uses the underscore form `nodus_protocol_amm.wasm`. Keep deploy scripts and
+manual commands pointed at that filename unless the crate name is
+intentionally changed.
 
 ---
 
