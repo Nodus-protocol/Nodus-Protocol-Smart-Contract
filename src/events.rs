@@ -32,6 +32,16 @@ pub struct SyncEvent {
     pub reserve_1: i128,
 }
 
+#[contracttype]
+pub struct PausedEvent {
+    pub caller: Address,
+}
+
+#[contracttype]
+pub struct UnpausedEvent {
+    pub caller: Address,
+}
+
 /// Emits a mint event.
 ///
 /// Topic includes the emitting contract's address (`env.current_contract_address()`)
