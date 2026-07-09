@@ -609,15 +609,7 @@ impl NodusAmm {
     // ── Protocol fee collector ──────────────────────────────────────────────
 
     pub fn set_fee_to(env: Env, caller: Address, new_fee_to: Option<Address>) -> Result<(), Error> {
-        caller.require_auth();
-        let setter: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeToSetter)
-            .ok_or(Error::NotInitialized)?;
-        if caller != setter {
-            return Err(Error::Unauthorized);
-        }
+        require_fee_to_setter(&env, &caller)?;
         match &new_fee_to {
             Some(addr) => env.storage().instance().set(&DataKey::FeeTo, addr),
             None => env.storage().instance().remove(&DataKey::FeeTo),
@@ -626,15 +618,7 @@ impl NodusAmm {
     }
 
     pub fn set_fee_to_setter(env: Env, caller: Address, new_setter: Address) -> Result<(), Error> {
-        caller.require_auth();
-        let setter: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeToSetter)
-            .ok_or(Error::NotInitialized)?;
-        if caller != setter {
-            return Err(Error::Unauthorized);
-        }
+        require_fee_to_setter(&env, &caller)?;
         env.storage()
             .instance()
             .set(&DataKey::FeeToSetter, &new_setter);
