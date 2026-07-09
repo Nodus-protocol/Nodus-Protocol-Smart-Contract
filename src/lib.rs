@@ -636,6 +636,31 @@ impl NodusAmm {
             .ok_or(Error::NotInitialized)
     }
 
+    // ── Emergency pause ──────────────────────────────────────────────────────
+
+    /// Halts add_liquidity, remove_liquidity, and all swap entrypoints.
+    /// Callable only by the fee_to_setter admin address.
+    pub fn pause(env: Env, caller: Address) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_fee_to_setter(&env, &caller)?;
+        env.storage().instance().set(&DataKey::Paused, &true);
+        events::emit_paused(&env, caller);
+        Ok(())
+    }
+
+    /// Resumes normal operation after a [`Self::pause`].
+    pub fn unpause(env: Env, caller: Address) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_fee_to_setter(&env, &caller)?;
+        env.storage().instance().set(&DataKey::Paused, &false);
+        events::emit_unpaused(&env, caller);
+        Ok(())
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        is_paused(&env)
+    }
+
     // ── LP token interface ──────────────────────────────────────────────────
 
     pub fn lp_balance_of(env: Env, owner: Address) -> i128 {
