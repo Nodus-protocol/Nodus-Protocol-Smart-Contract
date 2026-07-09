@@ -327,6 +327,7 @@ impl NodusAmm {
         amount_1_out: i128,
     ) -> Result<(), Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         lock(&env)?;
         env.storage()
             .instance()
