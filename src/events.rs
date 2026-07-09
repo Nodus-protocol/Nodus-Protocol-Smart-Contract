@@ -120,6 +120,22 @@ pub fn emit_sync(env: &Env, reserve_0: i128, reserve_1: i128) {
     );
 }
 
+/// Emits a paused event. See [`emit_mint`] for the multi-pool indexing rationale.
+pub fn emit_paused(env: &Env, caller: Address) {
+    env.events().publish(
+        (symbol_short!("v1_pause"), env.current_contract_address()),
+        PausedEvent { caller },
+    );
+}
+
+/// Emits an unpaused event. See [`emit_mint`] for the multi-pool indexing rationale.
+pub fn emit_unpaused(env: &Env, caller: Address) {
+    env.events().publish(
+        (symbol_short!("v1_unpau"), env.current_contract_address()),
+        UnpausedEvent { caller },
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
