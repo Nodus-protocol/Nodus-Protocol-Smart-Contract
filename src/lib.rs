@@ -49,6 +49,33 @@ fn get_timestamp_last(env: &Env) -> u64 {
         .unwrap_or(0)
 }
 
+fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+fn require_not_paused(env: &Env) -> Result<(), Error> {
+    if is_paused(env) {
+        return Err(Error::ContractPaused);
+    }
+    Ok(())
+}
+
+fn require_fee_to_setter(env: &Env, caller: &Address) -> Result<(), Error> {
+    caller.require_auth();
+    let setter: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::FeeToSetter)
+        .ok_or(Error::NotInitialized)?;
+    if *caller != setter {
+        return Err(Error::Unauthorized);
+    }
+    Ok(())
+}
+
 fn is_locked(env: &Env) -> bool {
     env.storage()
         .instance()
