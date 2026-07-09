@@ -32,6 +32,16 @@ pub struct SyncEvent {
     pub reserve_1: i128,
 }
 
+#[contracttype]
+pub struct PausedEvent {
+    pub caller: Address,
+}
+
+#[contracttype]
+pub struct UnpausedEvent {
+    pub caller: Address,
+}
+
 /// Emits a mint event.
 ///
 /// Topic includes the emitting contract's address (`env.current_contract_address()`)
@@ -107,6 +117,22 @@ pub fn emit_sync(env: &Env, reserve_0: i128, reserve_1: i128) {
             reserve_0,
             reserve_1,
         },
+    );
+}
+
+/// Emits a paused event. See [`emit_mint`] for the multi-pool indexing rationale.
+pub fn emit_paused(env: &Env, caller: Address) {
+    env.events().publish(
+        (symbol_short!("v1_pause"), env.current_contract_address()),
+        PausedEvent { caller },
+    );
+}
+
+/// Emits an unpaused event. See [`emit_mint`] for the multi-pool indexing rationale.
+pub fn emit_unpaused(env: &Env, caller: Address) {
+    env.events().publish(
+        (symbol_short!("v1_unpau"), env.current_contract_address()),
+        UnpausedEvent { caller },
     );
 }
 

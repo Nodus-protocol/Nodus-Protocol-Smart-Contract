@@ -20,4 +20,5 @@ pub enum Error {
     NotInitialized = 14,
     SlippageTooHigh = 15,
     Unauthorized = 16,
+    ContractPaused = 17,
 }

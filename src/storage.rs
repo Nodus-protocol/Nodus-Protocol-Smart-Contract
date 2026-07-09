@@ -18,4 +18,5 @@ pub enum DataKey {
     Initialized,
     FeeTo,
     FeeToSetter,
+    Paused,
 }

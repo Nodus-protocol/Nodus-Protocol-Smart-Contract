@@ -49,6 +49,33 @@ fn get_timestamp_last(env: &Env) -> u64 {
         .unwrap_or(0)
 }
 
+fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+fn require_not_paused(env: &Env) -> Result<(), Error> {
+    if is_paused(env) {
+        return Err(Error::ContractPaused);
+    }
+    Ok(())
+}
+
+fn require_fee_to_setter(env: &Env, caller: &Address) -> Result<(), Error> {
+    caller.require_auth();
+    let setter: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::FeeToSetter)
+        .ok_or(Error::NotInitialized)?;
+    if *caller != setter {
+        return Err(Error::Unauthorized);
+    }
+    Ok(())
+}
+
 fn is_locked(env: &Env) -> bool {
     env.storage()
         .instance()
@@ -169,6 +196,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -247,6 +275,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<(i128, i128), Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -298,6 +327,7 @@ impl NodusAmm {
         amount_1_out: i128,
     ) -> Result<(), Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         lock(&env)?;
         env.storage()
             .instance()
@@ -427,6 +457,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -496,6 +527,7 @@ impl NodusAmm {
         deadline: u64,
     ) -> Result<i128, Error> {
         require_initialized(&env)?;
+        require_not_paused(&env)?;
         if env.ledger().timestamp() > deadline {
             return Err(Error::Expired);
         }
@@ -582,15 +614,7 @@ impl NodusAmm {
     // ── Protocol fee collector ──────────────────────────────────────────────
 
     pub fn set_fee_to(env: Env, caller: Address, new_fee_to: Option<Address>) -> Result<(), Error> {
-        caller.require_auth();
-        let setter: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeToSetter)
-            .ok_or(Error::NotInitialized)?;
-        if caller != setter {
-            return Err(Error::Unauthorized);
-        }
+        require_fee_to_setter(&env, &caller)?;
         match &new_fee_to {
             Some(addr) => env.storage().instance().set(&DataKey::FeeTo, addr),
             None => env.storage().instance().remove(&DataKey::FeeTo),
@@ -599,15 +623,7 @@ impl NodusAmm {
     }
 
     pub fn set_fee_to_setter(env: Env, caller: Address, new_setter: Address) -> Result<(), Error> {
-        caller.require_auth();
-        let setter: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::FeeToSetter)
-            .ok_or(Error::NotInitialized)?;
-        if caller != setter {
-            return Err(Error::Unauthorized);
-        }
+        require_fee_to_setter(&env, &caller)?;
         env.storage()
             .instance()
             .set(&DataKey::FeeToSetter, &new_setter);
@@ -623,6 +639,31 @@ impl NodusAmm {
             .instance()
             .get(&DataKey::FeeToSetter)
             .ok_or(Error::NotInitialized)
+    }
+
+    // ── Emergency pause ──────────────────────────────────────────────────────
+
+    /// Halts add_liquidity, remove_liquidity, and all swap entrypoints.
+    /// Callable only by the fee_to_setter admin address.
+    pub fn pause(env: Env, caller: Address) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_fee_to_setter(&env, &caller)?;
+        env.storage().instance().set(&DataKey::Paused, &true);
+        events::emit_paused(&env, caller);
+        Ok(())
+    }
+
+    /// Resumes normal operation after a [`Self::pause`].
+    pub fn unpause(env: Env, caller: Address) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_fee_to_setter(&env, &caller)?;
+        env.storage().instance().set(&DataKey::Paused, &false);
+        events::emit_unpaused(&env, caller);
+        Ok(())
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        is_paused(&env)
     }
 
     // ── LP token interface ──────────────────────────────────────────────────
