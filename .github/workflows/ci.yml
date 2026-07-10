@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build Soroban Contract
+    name: Build Soroban Contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,13 +17,31 @@ jobs:
           targets: wasm32v1-none
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Build contract WASM
-        run: cargo build --release --target wasm32v1-none
-      - name: Upload WASM artifact
+      # The pool contract imports the LP token contract's compiled WASM
+      # via contractimport! (see contracts/pool/src/lib.rs), so that WASM
+      # must exist before the pool builds. This must be a separate `cargo
+      # build` invocation, not folded into the --workspace build below:
+      # Cargo has no dependency-graph edge between the two crates (that's
+      # the whole point of contractimport! over a regular path dependency
+      # -- see the comment in lib.rs), so within a single `--workspace`
+      # invocation Cargo is free to compile them in parallel, and
+      # sometimes does, racing the pool's build against a LP token WASM
+      # file that doesn't exist yet. Confirmed by hitting that exact race
+      # locally before splitting this into two steps.
+      - name: Build LP token WASM (must finish before the pool)
+        run: cargo build --release --target wasm32v1-none -p nodus-protocol-lp-token
+      - name: Build contract WASM (all workspace members)
+        run: cargo build --release --target wasm32v1-none --workspace
+      - name: Upload pool WASM artifact
         uses: actions/upload-artifact@v4
         with:
           name: nodus-protocol-amm-wasm
           path: target/wasm32v1-none/release/nodus_protocol_amm.wasm
+      - name: Upload LP token WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodus-protocol-lp-token-wasm
+          path: target/wasm32v1-none/release/nodus_protocol_lp_token.wasm
 
   test:
     name: Test (unit + integration)
@@ -31,9 +49,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
       - uses: Swatinem/rust-cache@v2
+      # See the build job's comment: required before anything touches
+      # the pool crate, including plain `cargo test`.
+      - name: Build LP token WASM (must finish before the pool)
+        run: cargo build --release --target wasm32v1-none -p nodus-protocol-lp-token
       - name: Run tests
-        run: cargo test --features testutils
+        run: cargo test --workspace --features testutils
 
   lint:
     name: Lint
@@ -42,9 +66,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          targets: wasm32v1-none
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # See the build job's comment: required before anything touches
+      # the pool crate, including clippy.
+      - name: Build LP token WASM (must finish before the pool)
+        run: cargo build --release --target wasm32v1-none -p nodus-protocol-lp-token
       - name: Clippy
-        run: cargo clippy --all-targets --features testutils -- -D warnings
+        run: cargo clippy --workspace --all-targets --features testutils -- -D warnings
       - name: Format check
         run: cargo fmt --all -- --check

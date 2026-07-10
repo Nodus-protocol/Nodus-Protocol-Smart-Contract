@@ -1,22 +1,25 @@
-.PHONY: build test lint format clean deploy-testnet deploy-mainnet help
+.PHONY: build build-lp-token test test-math lint format clean deploy-testnet deploy-mainnet help
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 	    awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
 
-build: ## Build optimised contract WASM via Stellar CLI
-	stellar contract build
+build-lp-token: ## Build the LP token contract WASM (must finish before the pool -- it imports this WASM via contractimport!)
+	cargo build --release --target wasm32v1-none -p nodus-protocol-lp-token
 
-test: ## Run all tests (unit + integration; requires testutils feature)
-	cargo test --features testutils
+build: build-lp-token ## Build all contract WASMs (LP token first, then everything else)
+	cargo build --release --target wasm32v1-none --workspace
+
+test: build-lp-token ## Run all tests (unit + integration; requires testutils feature)
+	cargo test --workspace --features testutils
 
 test-math: ## Run math-only unit tests (no Soroban env needed)
-	cargo test math_tests
-	cargo test liquidity_pool_tests
-	cargo test fuzz_math
+	cargo test -p nodus-protocol-amm math_tests
+	cargo test -p nodus-protocol-amm liquidity_pool_tests
+	cargo test -p nodus-protocol-amm fuzz_math
 
-lint: ## Run clippy and check formatting
-	cargo clippy --all-targets --features testutils -- -D warnings
+lint: build-lp-token ## Run clippy and check formatting
+	cargo clippy --workspace --all-targets --features testutils -- -D warnings
 	cargo fmt --all --check
 
 format: ## Format all source files

@@ -1,10 +1,10 @@
 [package]
-name = "nodus-protocol-amm"
+name = "nodus-protocol-lp-token"
 version = "0.1.0"
 authors = ["Nodus Protocol Team"]
 edition = "2021"
 license = "MIT"
-description = "Constant-product AMM liquidity pool on Stellar Soroban"
+description = "Standalone SEP-41 LP token contract for a Nodus Protocol pool"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -17,4 +17,3 @@ soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-nodus-protocol-lp-token = { path = "../lp-token", features = ["testutils"] }
