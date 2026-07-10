@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Building Nodus AMM contract for Stellar Soroban..."
+echo "Building Nodus Protocol contracts for Stellar Soroban..."
+echo "Prefer 'make build' -- it builds the LP token contract before the"
+echo "pool, which the pool's build requires (see contracts/pool/src/lib.rs)."
+echo "'stellar contract build' below builds the whole workspace and its"
+echo "own internal ordering hasn't been verified against that requirement."
 
 if ! command -v stellar &>/dev/null; then
     echo "Stellar CLI not found. Install: cargo install --locked stellar-cli --features opt"
@@ -10,6 +14,7 @@ fi
 
 stellar contract build
 
-WASM="target/wasm32-unknown-unknown/release/nodus_protocol_amm.wasm"
-echo "Build complete: $WASM"
-ls -lh "$WASM"
+POOL_WASM="target/wasm32v1-none/release/nodus_protocol_amm.wasm"
+LP_TOKEN_WASM="target/wasm32v1-none/release/nodus_protocol_lp_token.wasm"
+echo "Build complete:"
+ls -lh "$POOL_WASM" "$LP_TOKEN_WASM"
