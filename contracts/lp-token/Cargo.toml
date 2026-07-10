@@ -1,0 +1,19 @@
+[package]
+name = "nodus-protocol-lp-token"
+version = "0.1.0"
+authors = ["Nodus Protocol Team"]
+edition = "2021"
+license = "MIT"
+description = "Standalone SEP-41 LP token contract for a Nodus Protocol pool"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

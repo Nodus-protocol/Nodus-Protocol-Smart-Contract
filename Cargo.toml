@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["contracts/pool"]
+members = ["contracts/pool", "contracts/lp-token"]
 
 [workspace.dependencies]
 soroban-sdk = "26.1.0"
