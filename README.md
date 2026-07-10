@@ -11,29 +11,46 @@ Constant-product Automated Market Maker (AMM) smart contract written in **Rust**
 
 ## Overview
 
-This contract implements a Uniswap V2-style AMM on Stellar Soroban. It holds reserves for two SEP-41 Stellar tokens, executes atomic swaps, and issues LP tokens representing each provider's proportional share.
+This is a Uniswap V2-style AMM on Stellar Soroban, split across multiple
+contracts rather than one monolithic one. It holds reserves for two SEP-41
+Stellar tokens, executes atomic swaps, and issues LP tokens representing
+each provider's proportional share via a standalone LP token contract.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│            NodusAmm                 │
-│                                     │
-│  reserve_0 ──── reserve_1           │
-│       \              /              │
-│        k = x * y (invariant)        │
-│                                     │
-│  add_liquidity() → mint LP tokens   │
-│  remove_liquidity() → burn LP tokens│
-│  swap()                             │
-│  sync()  (drift correction)         │
-│                                     │
+┌─────────────────────────────────────┐      ┌──────────────────────────┐
+│            NodusAmm (pool)          │      │  nodus-protocol-lp-token │
+│                                      │      │                          │
+│  reserve_0 ──── reserve_1           │ mint/ │  Standalone SEP-41-      │
+│       \              /              │ burn  │  compatible token.       │
+│        k = x * y (invariant)        │──────►│  mint/burn are pool-     │
+│                                      │       │  gated; transfer/       │
+│  add_liquidity() → mint LP tokens   │       │  approve/allowance are  │
+│  remove_liquidity() → burn LP tokens│       │  standard and open to    │
+│  swap()                             │       │  any holder.             │
+│  sync()  (drift correction)         │       └──────────────────────────┘
+│                                      │
 │  TWAP price accumulators            │
 │  (price_0_cumulative_last, …)       │
-└─────────────────────────────────────┘
+└──────────────────────────────────────┘
 ```
 
-LP tokens are tracked internally in the pool's persistent storage — no separate token contract is required.
+The pool talks to its LP token contract via `contractimport!` (see
+`contracts/pool/src/lib.rs`) rather than a regular Cargo dependency on the
+`nodus-protocol-lp-token` crate — depending on the crate directly links
+its own `#[contractimpl]`-generated WASM exports into the pool's binary
+too (confirmed empirically: both crates export an `initialize` function,
+which fails the link with a duplicate-symbol error). `contractimport!`
+reads the LP token's *compiled* WASM instead, so **the LP token contract
+must be built before the pool** — `make build`/`make test`/`make lint`
+all handle this ordering; see [Build](#build) below if you're running
+`cargo` directly.
+
+A factory contract (deploying and tracking a pool + LP token pair per
+token combination, since today's pool still only supports one hard-coded
+pair per deployed instance) and a router contract (multi-hop swaps once
+more than one pool exists) are planned as follow-up PRs.
 
 ---
 
@@ -47,8 +64,7 @@ contracts/
   pool/
     src/
       lib.rs              Contract entry point — all public functions
-      liquidity_pool.rs   Pool math: optimal amounts, K-invariant, LP mint/burn
-      lp_token.rs         Internal LP ledger: mint, burn, transfer, approve, allowance
+      liquidity_pool.rs   Pool math: optimal amounts, K-invariant
       math.rs             AMM formulas: get_amount_out, get_amount_in, sqrt
       storage.rs          DataKey enum for all instance + persistent storage keys
       events.rs           Soroban event wrappers: Mint, Burn, Swap, Sync
@@ -56,8 +72,20 @@ contracts/
       traits.rs           IAmmPool interface definition
     tests/
       unit_tests.rs       Pure math + liquidity-pool unit tests (no Soroban env)
-      integration_tests.rs Soroban testenv contract interaction tests
+      integration_tests.rs Soroban testenv contract interaction tests, including
+                           a full add_liquidity/remove_liquidity round trip
+                           through a real LP token contract instance
       fuzz_tests.rs       Property tests: k-invariant, sqrt floor, fee monotonicity
+  lp-token/
+    src/
+      lib.rs              Contract entry point: mint (pool-gated), plus the
+                           standard transfer/transfer_from/approve/allowance/
+                           burn/burn_from/balance/decimals/name/symbol interface
+      storage.rs           DataKey enum
+      errors.rs             Stable #[contracterror] enum
+      events.rs              Mint, Burn, Transfer, Approve event wrappers
+    tests/
+      integration_tests.rs  Soroban testenv contract interaction tests
 ```
 
 ---
@@ -68,7 +96,7 @@ contracts/
 
 | Function | Auth | Description |
 |----------|------|-------------|
-| `initialize(token_0, token_1)` | — | One-time setup. Stores token addresses. |
+| `initialize(token_0, token_1, fee_to_setter, lp_token)` | — | One-time setup. `lp_token` must already be a deployed, uninitialized `nodus-protocol-lp-token` instance — this contract never deploys or initializes it itself; that's the factory's job (planned). |
 | `sync()` | — | Reconcile reserves with actual contract token balances. |
 
 ### Liquidity
@@ -86,16 +114,11 @@ contracts/
 | `get_amount_out(amount_in, reserve_in, reserve_out)` | — | Quote output for a given input (0.3% fee). |
 | `get_amount_in(amount_out, reserve_in, reserve_out)` | — | Quote input required to receive a given output. |
 
-### LP token interface
+### LP token
 
-| Function | Auth | Description |
-|----------|------|-------------|
-| `lp_balance_of(owner)` | — | Return LP token balance. |
-| `lp_total_supply()` | — | Return total LP tokens in circulation. |
-| `transfer_lp(from, to, amount)` | `from` | Transfer LP tokens directly. |
-| `approve_lp(owner, spender, amount)` | `owner` | Approve `spender` to transfer up to `amount` LP tokens. |
-| `lp_allowance(owner, spender)` | — | Return remaining approved LP amount. |
-| `transfer_lp_from(spender, from, to, amount)` | `spender` | Transfer LP tokens using an existing allowance. |
+| Function | Description |
+|----------|-------------|
+| `lp_token()` | Returns the address of this pool's LP token contract. Balance, transfer, approve, and supply queries all live there now — interact with it directly rather than through the pool; see [LP Token Contract](#lp-token-contract) below. |
 
 ### View
 
@@ -107,18 +130,42 @@ contracts/
 
 ---
 
+## LP Token Contract
+
+`nodus-protocol-lp-token` is a standalone contract, one instance per pool.
+`mint` is pool-gated (see [Pool lifecycle](#pool-lifecycle)); everything
+else is the standard SEP-41 token interface (`soroban_sdk::token::Client`
+can call it like any other token), open to any holder.
+
+| Function | Auth | Description |
+|----------|------|-------------|
+| `initialize(pool, name, symbol, decimals)` | — | One-time setup. `pool` becomes the only address `mint` will ever accept. |
+| `pool()` | — | Returns the authorized pool address. |
+| `mint(caller, to, amount)` | `caller` (must be `pool`) | Mints new LP tokens. Not part of SEP-41 — minting is issuer-specific by design in that standard. |
+| `balance(id)` | — | Return `id`'s LP token balance. |
+| `total_supply()` | — | Return total LP tokens in circulation. |
+| `transfer(from, to, amount)` | `from` | Standard transfer. `to` is a `MuxedAddress` per SEP-41, so a payment can carry a muxed id for the recipient's own bookkeeping. |
+| `approve(from, spender, amount, expiration_ledger)` | `from` | Approve `spender` to move up to `amount`, expiring at `expiration_ledger`. `amount: 0` revokes regardless of `expiration_ledger`. |
+| `allowance(from, spender)` | — | Return the remaining approved amount. |
+| `transfer_from(spender, from, to, amount)` | `spender` | Transfer using an existing allowance. |
+| `burn(from, amount)` | `from` | Burns `from`'s own tokens. When the pool calls this during `remove_liquidity`, `from`'s authorization for that top-level call covers this nested one too. A holder can also call it directly, bypassing the pool — that forfeits their claim on the underlying reserves with no payout, which only benefits every other LP holder proportionally. Unusual, not unsafe. |
+| `burn_from(spender, from, amount)` | `spender` | Burns using an existing allowance. |
+| `name()` / `symbol()` / `decimals()` | — | Standard metadata. |
+
+---
+
 ## Build
 
 ```bash
 # Install Stellar CLI
 cargo install --locked stellar-cli --features opt
 
-# Build (produces optimised WASM)
+# Build (produces optimised WASM for every contract)
 make build
-# or: stellar contract build
 
-# Build output used by the deploy scripts
+# Build output
 target/wasm32v1-none/release/nodus_protocol_amm.wasm
+target/wasm32v1-none/release/nodus_protocol_lp_token.wasm
 
 # Run tests
 make test
@@ -127,24 +174,43 @@ make test
 make lint
 ```
 
+`make build`/`make test`/`make lint` all build the LP token contract's
+WASM before touching the pool crate — required because the pool imports
+it via `contractimport!` at compile time (see [Architecture](#architecture)).
+If you're running `cargo` directly instead of through `make`, build
+`nodus-protocol-lp-token` first as its own step:
+
+```bash
+cargo build --release --target wasm32v1-none -p nodus-protocol-lp-token
+cargo build --release --target wasm32v1-none --workspace  # or test/clippy/fmt
+```
+
+A single `cargo build --workspace` from a clean `target/` **will not**
+reliably do this for you — Cargo has no dependency-graph edge between the
+two crates (that's the point of `contractimport!` over a regular
+dependency), so it's free to compile them in parallel and sometimes does,
+racing the pool's build against an LP token WASM that doesn't exist yet.
+
 ---
 
 ## Deploy
 
 ```bash
 # Testnet
-STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... make deploy-testnet
+STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... FEE_TO_SETTER=G... make deploy-testnet
 
 # Mainnet
-STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... make deploy-mainnet
+STELLAR_SECRET_KEY=S... TOKEN_0=C... TOKEN_1=C... FEE_TO_SETTER=G... make deploy-mainnet
 ```
 
-The deploy script uploads the WASM, deploys a new contract instance, and calls `initialize`.
+The deploy script uploads and deploys both contracts, initializes the LP
+token first (it needs to know its pool's address before the pool can be
+initialized with it), then initializes the pool. `LP_TOKEN_NAME` /
+`LP_TOKEN_SYMBOL` / `LP_TOKEN_DECIMALS` are optional overrides.
 
-The pool crate is named `nodus-protocol-amm`, so the generated WASM artifact
-uses the underscore form `nodus_protocol_amm.wasm`. Keep deploy scripts and
-manual commands pointed at that filename unless the crate name is
-intentionally changed.
+This is manual, one-pair-at-a-time tooling. The planned factory contract
+will do this deployment + wiring on-chain, for any token pair, without a
+human running a script per pool.
 
 ---
 
