@@ -5,13 +5,31 @@ use soroban_sdk::{contract, contractimpl, token::Client as TokenClient, Address,
 pub mod errors;
 pub mod events;
 pub mod liquidity_pool;
-pub mod lp_token;
 pub mod math;
 pub mod storage;
 pub mod traits;
 
 pub use errors::Error;
 use storage::DataKey;
+
+/// Imports the LP token contract's interface from its own compiled WASM
+/// (built separately -- see contracts/lp-token) rather than depending on
+/// its crate directly. A regular Cargo dependency would link that
+/// crate's own #[contractimpl]-generated WASM exports into this
+/// contract's binary too: confirmed empirically, since both crates
+/// export an `initialize` function, which fails the link with a
+/// duplicate-symbol error. This only pulls in the client type and call
+/// signatures, not the LP token's own contract code.
+///
+/// Build order requirement: contracts/lp-token must be built to WASM
+/// before this crate, since contractimport! reads the file at compile
+/// time. `make build` / CI handle this; see the workspace README.
+mod lp_token_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/nodus_protocol_lp_token.wasm"
+    );
+}
+use lp_token_contract::Client as LpTokenClient;
 
 const INSTANCE_TTL_THRESHOLD: u32 = 100;
 const INSTANCE_TTL_BUMP: u32 = 500;
@@ -151,16 +169,26 @@ fn dead_address(env: &Env) -> Address {
     env.current_contract_address()
 }
 
+fn lp_token_client(env: &Env) -> LpTokenClient<'_> {
+    let lp_token: Address = env.storage().instance().get(&DataKey::LpToken).unwrap();
+    LpTokenClient::new(env, &lp_token)
+}
+
 #[contract]
 pub struct NodusAmm;
 
 #[contractimpl]
 impl NodusAmm {
+    /// `lp_token` must already be a deployed, uninitialized
+    /// nodus-protocol-lp-token instance; the factory is responsible for
+    /// deploying it and handing its address here. This contract never
+    /// deploys or initializes the LP token itself.
     pub fn initialize(
         env: Env,
         token_0: Address,
         token_1: Address,
         fee_to_setter: Address,
+        lp_token: Address,
     ) -> Result<(), Error> {
         if env
             .storage()
@@ -175,6 +203,7 @@ impl NodusAmm {
         }
         env.storage().instance().set(&DataKey::Token0, &token_0);
         env.storage().instance().set(&DataKey::Token1, &token_1);
+        env.storage().instance().set(&DataKey::LpToken, &lp_token);
         env.storage()
             .instance()
             .set(&DataKey::FeeToSetter, &fee_to_setter);
@@ -230,13 +259,18 @@ impl NodusAmm {
         token_pull(&env, &token_0, &from, amount_0);
         token_pull(&env, &token_1, &from, amount_1);
 
-        let total_supply = lp_token::total_supply(&env);
+        let lp_client = lp_token_client(&env);
+        let this_contract = env.current_contract_address();
+        let total_supply = lp_client.total_supply();
 
         let liquidity = if total_supply == 0 {
             let initial = liquidity_pool::calculate_initial_liquidity(amount_0, amount_1)
                 .inspect_err(|_| unlock(&env))?;
-            lp_token::mint(&env, &dead_address(&env), math::MINIMUM_LIQUIDITY)
-                .inspect_err(|_| unlock(&env))?;
+            lp_client.mint(
+                &this_contract,
+                &dead_address(&env),
+                &math::MINIMUM_LIQUIDITY,
+            );
             initial
         } else {
             liquidity_pool::calculate_liquidity_to_mint(
@@ -254,7 +288,7 @@ impl NodusAmm {
             return Err(Error::InsufficientLiquidityMinted);
         }
 
-        lp_token::mint(&env, &to, liquidity).inspect_err(|_| unlock(&env))?;
+        lp_client.mint(&this_contract, &to, &liquidity);
 
         let b0 = token_balance(&env, &token_0);
         let b1 = token_balance(&env, &token_1);
@@ -289,7 +323,8 @@ impl NodusAmm {
         let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
         let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
 
-        let total_supply = lp_token::total_supply(&env);
+        let lp_client = lp_token_client(&env);
+        let total_supply = lp_client.total_supply();
         let reserve_0 = get_reserve_0(&env);
         let reserve_1 = get_reserve_1(&env);
 
@@ -306,7 +341,13 @@ impl NodusAmm {
             return Err(Error::InsufficientLiquidityBurned);
         }
 
-        lp_token::burn(&env, &from, liquidity).inspect_err(|_| unlock(&env))?;
+        // Burns from's own LP tokens; from already authorized this whole
+        // call above, and that same authorization covers this nested
+        // require_auth() on the LP token contract. Panics (reverting the
+        // whole transaction, same as everywhere else in this contract
+        // that unwraps an internal invariant) if from's real on-chain LP
+        // balance is less than the amount they asked to redeem.
+        lp_client.burn(&from, &liquidity);
 
         token_push(&env, &token_0, &to, amount_0);
         token_push(&env, &token_1, &to, amount_1);
@@ -666,44 +707,16 @@ impl NodusAmm {
         is_paused(&env)
     }
 
-    // ── LP token interface ──────────────────────────────────────────────────
+    // ── LP token ─────────────────────────────────────────────────────────────
 
-    pub fn lp_balance_of(env: Env, owner: Address) -> i128 {
-        lp_token::balance_of(&env, &owner)
-    }
-
-    pub fn lp_total_supply(env: Env) -> i128 {
-        lp_token::total_supply(&env)
-    }
-
-    pub fn transfer_lp(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
-        from.require_auth();
-        lp_token::transfer(&env, &from, &to, amount)
-    }
-
-    pub fn approve_lp(
-        env: Env,
-        owner: Address,
-        spender: Address,
-        amount: i128,
-    ) -> Result<(), Error> {
-        owner.require_auth();
-        lp_token::approve(&env, &owner, &spender, amount)
-    }
-
-    pub fn lp_allowance(env: Env, owner: Address, spender: Address) -> i128 {
-        lp_token::allowance(&env, &owner, &spender)
-    }
-
-    pub fn transfer_lp_from(
-        env: Env,
-        spender: Address,
-        from: Address,
-        to: Address,
-        amount: i128,
-    ) -> Result<(), Error> {
-        spender.require_auth();
-        lp_token::transfer_from(&env, &spender, &from, &to, amount)
+    /// The standalone SEP-41 LP token contract for this pool. Balance,
+    /// transfer, approve, and supply queries all live there now --
+    /// interact with it directly rather than through this contract.
+    pub fn lp_token(env: Env) -> Result<Address, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::LpToken)
+            .ok_or(Error::NotInitialized)
     }
 
     pub fn token_0(env: Env) -> Result<Address, Error> {
