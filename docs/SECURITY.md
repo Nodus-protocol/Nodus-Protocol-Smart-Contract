@@ -8,10 +8,10 @@ This document describes the threat model, known attack vectors, and the mitigati
 
 The contracts assume:
 
-- The Substrate runtime and ink! execution environment are trusted.
-- Tokens are well-behaved PSP22 implementations (no fee-on-transfer, no rebase).
+- The Soroban runtime and execution environment are trusted.
+- Tokens are well-behaved SEP-41 implementations (no fee-on-transfer, no rebase).
 - The deployer-configured `token_0`, `token_1`, and `lp_token` addresses are correct.
-- Users interact with the pool through standard ink! message dispatch.
+- Users interact with the pool through standard Soroban contract calls.
 
 ---
 
@@ -28,12 +28,12 @@ The contracts assume:
 
 ### Integer Overflow and Underflow
 
-**Risk:** Arithmetic on token amounts and reserves can overflow `u128` or underflow to zero.
+**Risk:** Arithmetic on token amounts and reserves can overflow `i128` or underflow to zero.
 
 **Mitigation:**
 - All arithmetic uses `checked_*` operations (`checked_mul`, `checked_add`, `checked_sub`).
 - Errors propagate as `Error::Overflow` or `Error::InsufficientLiquidity` rather than panicking or wrapping.
-- The `[profile.release]` section in `Cargo.toml` sets `overflow-checks = false` for WASM size; all safety is explicit via `checked_*`.
+- The Soroban SDK handles overflow checks; all safety is explicit via `checked_*`.
 
 ### First-Deposit Attack (Donation Attack)
 
@@ -78,14 +78,14 @@ The contracts assume:
 **Risk:** A pending transaction is executed at a future time when market conditions have changed, resulting in a bad trade or deposit.
 
 **Mitigation:**
-- `add_liquidity` and `remove_liquidity` accept a `deadline: u64` (block timestamp). If `env().block_timestamp() > deadline`, the message returns `Error::Expired` immediately.
+- `add_liquidity` and `remove_liquidity` accept a `deadline: u64` (ledger timestamp). If `env.ledger().timestamp() > deadline`, the message returns `Error::Expired` immediately.
 
 ### Unauthorized LP Token Minting and Burning
 
 **Risk:** Any account mints LP tokens for free or burns another user's position.
 
 **Mitigation:**
-- The LP token contract restricts `mint` and `burn` to a single authorized caller — the pool contract's `AccountId`, set at LP token deployment.
+- The LP token contract restricts `mint` and `burn` to a single authorized caller — the pool contract's `Address`, set at LP token deployment.
 - These are enforced inside the LP token contract; the pool contract does not need to enforce this itself.
 
 ### Front-Running
@@ -120,7 +120,7 @@ The contracts assume:
 - [ ] All `checked_*` arithmetic paths verified for completeness
 - [ ] Reentrancy guard covers every state-changing message
 - [ ] K invariant check reviewed for edge cases (zero reserves, single-sided input)
-- [ ] LP token access control reviewed against pool `AccountId`
+- [ ] LP token access control reviewed against pool `Address`
 - [ ] TWAP accumulator overflow (wrapping on purpose) documented and accepted
 - [ ] Fuzz tests pass for all math functions
 - [ ] Integration tests cover reentrancy rejection and K violation rejection

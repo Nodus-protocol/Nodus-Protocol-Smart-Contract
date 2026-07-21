@@ -2,10 +2,10 @@
 
 ## Overview
 
-Nodus Protocol implements a constant-product AMM using two cooperating ink! smart contracts:
+Nodus Protocol implements a constant-product AMM using two cooperating Soroban smart contracts:
 
 1. **LiquidityPool** — holds token reserves, executes swaps, mints and burns LP tokens.
-2. **LPToken (PSP22)** — a standard fungible token representing a liquidity provider's share of the pool.
+2. **LpToken (SEP-41)** — a standard fungible token representing a liquidity provider's share of the pool.
 
 These contracts communicate through cross-contract calls. The pool is the sole authorized caller of the LP token's mint and burn functions.
 
@@ -14,35 +14,35 @@ These contracts communicate through cross-contract calls. The pool is the sole a
 ## Contract Relationship
 
 ```
-         ┌──────────────────────────────────────┐
-         │           LiquidityPool               │
-         │                                       │
-         │  reserve_0 (token_0 balance)          │
-         │  reserve_1 (token_1 balance)          │
-         │  k_last    (fee accumulator)          │
-         │  price_X_cumulative (TWAP oracle)     │
-         │                                       │
-         │  add_liquidity()  ─────────────────── │──► mint LP tokens
-         │  remove_liquidity() ───────────────── │──► burn LP tokens
-         │  swap()                               │
-         │  sync()                               │
-         └──────────────────────────────────────┘
-                          │
-                          │ cross-contract calls
-                          ▼
-         ┌──────────────────────────────────────┐
-         │           LPToken (PSP22)             │
-         │                                       │
-         │  balances: Mapping<AccountId, u128>   │
-         │  allowances: Mapping<(AccountId,      │
-         │               AccountId), u128>       │
-         │  total_supply: u128                   │
-         │                                       │
-         │  mint()   (pool only)                 │
-         │  burn()   (pool only)                 │
-         │  transfer()                           │
-         │  transfer_from()                      │
-         └──────────────────────────────────────┘
+          ┌──────────────────────────────────────┐
+          │           LiquidityPool               │
+          │                                       │
+          │  reserve_0 (token_0 balance)          │
+          │  reserve_1 (token_1 balance)          │
+          │  k_last    (fee accumulator)          │
+          │  price_X_cumulative (TWAP oracle)     │
+          │                                       │
+          │  add_liquidity()  ─────────────────── │──► mint LP tokens
+          │  remove_liquidity() ───────────────── │──► burn LP tokens
+          │  swap()                               │
+          │  sync()                               │
+          └──────────────────────────────────────┘
+                           │
+                           │ cross-contract calls
+                           ▼
+          ┌──────────────────────────────────────┐
+          │           LpToken (SEP-41)            │
+          │                                       │
+          │  balance: Mapping<Address, i128>      │
+          │  allowance: Mapping<(Address,          │
+          │               Address), i128>         │
+          │  total_supply: i128                   │
+          │                                       │
+          │  mint()   (pool only)                 │
+          │  burn()   (pool only)                 │
+          │  transfer()                           │
+          │  transfer_from()                      │
+          └──────────────────────────────────────┘
 ```
 
 ---
@@ -51,14 +51,13 @@ These contracts communicate through cross-contract calls. The pool is the sole a
 
 | File | Purpose |
 |---|---|
-| `src/lib.rs` | Crate root: module declarations and the `#[ink::contract]` entry point |
-| `src/liquidity_pool.rs` | Pure functions: optimal amounts, liquidity calculations, K invariant check |
-| `src/lp_token.rs` | Cross-contract call wrapper for the PSP22 LP token |
-| `src/math.rs` | `get_amount_out`, `get_amount_in`, `sqrt`, fee constants |
-| `src/reentrancy_guard.rs` | Mutex-style `lock` / `unlock` trait implemented on the pool struct |
-| `src/events.rs` | `Mint`, `Burn`, `Swap`, `Sync` event definitions |
-| `src/errors.rs` | `Error` enum covering all failure modes |
-| `src/traits.rs` | `ILiquidityPool` and `IPSP22` ink! trait definitions |
+| `lib.rs` | Crate root: module declarations and the `#[contract]` entry point |
+| `liquidity_pool.rs` | Pure functions: optimal amounts, liquidity calculations, K invariant check |
+| `math.rs` | `get_amount_out`, `get_amount_in`, `sqrt`, fee constants |
+| `storage.rs` | `DataKey` enum for contract storage keys |
+| `events.rs` | `Mint`, `Burn`, `Swap`, `Sync` event definitions |
+| `errors.rs` | `Error` enum covering all failure modes |
+| `traits.rs` | `IAmmPool` trait definition for interface abstraction |
 
 ---
 
@@ -113,7 +112,7 @@ caller ──► remove_liquidity(liquidity, amount_0_min, amount_1_min, to, dea
               ├─ amount_0 = liquidity * reserve_0 / total_supply
               ├─ amount_1 = liquidity * reserve_1 / total_supply
               ├─ assert amount_0 >= amount_0_min, amount_1 >= amount_1_min
-              ├─ lp_token.burn(caller, liquidity)
+              ├─ lp_token.burn(from, liquidity)
               ├─ transfer token_0, token_1 to `to`
               ├─ update reserves + TWAP
               ├─ emit Burn + Sync
@@ -127,7 +126,7 @@ caller ──► remove_liquidity(liquidity, amount_0_min, amount_1_min, to, dea
 Cumulative price accumulators are updated on every reserve mutation:
 
 ```
-time_elapsed = block_timestamp - block_timestamp_last
+time_elapsed = ledger_timestamp - timestamp_last
 
 price_0_cumulative += (reserve_1 / reserve_0) * time_elapsed
 price_1_cumulative += (reserve_0 / reserve_1) * time_elapsed
