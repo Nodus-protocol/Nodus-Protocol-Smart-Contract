@@ -26,7 +26,7 @@ mod integration {
         let (env, contract, _, _) = setup_initialized();
         let client = NodusAmmClient::new(&env, &contract);
         let to = Address::generate(&env);
-        assert!(client.try_swap(&to, &100, &0).is_err());
+        assert!(client.try_swap(&to, &100, &0, &u64::MAX).is_err());
     }
 
     #[test]
@@ -34,7 +34,7 @@ mod integration {
         let (env, contract, _, _) = setup_initialized();
         let client = NodusAmmClient::new(&env, &contract);
         let to = Address::generate(&env);
-        assert!(client.try_swap(&to, &0, &0).is_err());
+        assert!(client.try_swap(&to, &0, &0, &u64::MAX).is_err());
     }
 
     #[test]
@@ -55,6 +55,15 @@ mod integration {
         assert!(client
             .try_remove_liquidity(&from, &to, &100, &0, &0, &1_000)
             .is_err());
+    }
+
+    #[test]
+    fn expired_swap_rejected() {
+        let (env, contract, _, _) = setup_initialized();
+        let client = NodusAmmClient::new(&env, &contract);
+        env.ledger().set_timestamp(5_000);
+        let to = Address::generate(&env);
+        assert!(client.try_swap(&to, &100, &0, &1_000).is_err());
     }
 
     #[test]
@@ -123,7 +132,7 @@ mod integration {
         client.pause(&admin);
         let to = Address::generate(&env);
         assert_eq!(
-            client.try_swap(&to, &100, &0),
+            client.try_swap(&to, &100, &0, &u64::MAX),
             Err(Ok(nodus_protocol_amm::Error::ContractPaused))
         );
     }
@@ -196,7 +205,7 @@ mod integration {
         let to = Address::generate(&env);
         // No longer blocked by pause; fails for the ordinary reason (no reserves) instead.
         assert_eq!(
-            client.try_swap(&to, &100, &0),
+            client.try_swap(&to, &100, &0, &u64::MAX),
             Err(Ok(nodus_protocol_amm::Error::InsufficientLiquidity))
         );
     }
