@@ -63,7 +63,10 @@ mod integration {
         let client = NodusAmmClient::new(&env, &contract);
         env.ledger().set_timestamp(5_000);
         let to = Address::generate(&env);
-        assert!(client.try_swap(&to, &100, &0, &1_000).is_err());
+        assert_eq!(
+            client.try_swap(&to, &100, &0, &1_000),
+            Err(Ok(nodus_protocol_amm::Error::Expired))
+        );
     }
 
     #[test]
