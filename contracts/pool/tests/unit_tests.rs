@@ -201,7 +201,7 @@ mod soroban_contract_tests {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
         let to = Address::generate(&env);
-        assert!(client.try_swap(&to, &100, &0).is_err());
+        assert!(client.try_swap(&to, &100, &0, &u64::MAX).is_err());
     }
 
     #[test]

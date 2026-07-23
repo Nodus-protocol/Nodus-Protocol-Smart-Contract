@@ -366,9 +366,13 @@ impl NodusAmm {
         to: Address,
         amount_0_out: i128,
         amount_1_out: i128,
+        deadline: u64,
     ) -> Result<(), Error> {
         require_initialized(&env)?;
         require_not_paused(&env)?;
+        if env.ledger().timestamp() > deadline {
+            return Err(Error::Expired);
+        }
         lock(&env)?;
         env.storage()
             .instance()
