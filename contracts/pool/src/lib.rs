@@ -658,6 +658,12 @@ impl NodusAmm {
 
     // ── Protocol fee collector ──────────────────────────────────────────────
 
+    /// Sets the recipient of the protocol fee.
+    /// 
+    /// # Important
+    /// Protocol fee collection is currently **not implemented** in the pool.
+    /// This is a reserved administrative endpoint; setting this value updates the configuration
+    /// but has no functional impact and no fees will accrue to the configured address.
     pub fn set_fee_to(env: Env, caller: Address, new_fee_to: Option<Address>) -> Result<(), Error> {
         require_fee_to_setter(&env, &caller)?;
         match &new_fee_to {
@@ -675,6 +681,11 @@ impl NodusAmm {
         Ok(())
     }
 
+    /// Returns the protocol fee recipient address, if configured.
+    /// 
+    /// # Important
+    /// Protocol fee collection is currently **not implemented** in the pool.
+    /// This function is non-functional/inert and is only a configuration query.
     pub fn fee_to(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::FeeTo)
     }

@@ -12,7 +12,6 @@ pub enum DataKey {
     TimestampLast,
     Price0CumulativeLast,
     Price1CumulativeLast,
-    KLast,
     Locked,
     Initialized,
     FeeTo,

@@ -19,7 +19,6 @@ These contracts communicate through cross-contract calls. The pool is the sole a
           │                                       │
           │  reserve_0 (token_0 balance)          │
           │  reserve_1 (token_1 balance)          │
-          │  k_last    (fee accumulator)          │
           │  price_X_cumulative (TWAP oracle)     │
           │                                       │
           │  add_liquidity()  ─────────────────── │──► mint LP tokens
@@ -149,7 +148,7 @@ The swap fee is 0.3% (30 basis points), implemented implicitly:
 - The output formula uses a 997/1000 multiplier on `amount_in`.
 - Fees remain in the reserves; they are not extracted to a separate address.
 - LP token holders capture fees proportionally when they burn their shares.
-- Protocol fee (if enabled) would redirect a fraction of fees to a `fee_to` address by comparing `k_last` before and after.
+- The protocol fee mechanism (which would redirect a fraction of fees to a `fee_to` address) is **not implemented**. The `fee_to` address and setter methods exist as reserved placeholders, but no protocol fees are collected or accrued.
 
 ---
 
