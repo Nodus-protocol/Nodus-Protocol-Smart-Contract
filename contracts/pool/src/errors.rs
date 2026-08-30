@@ -36,4 +36,8 @@ pub enum Error {
     /// the pool tokens did not behave as expected (transfer/transfer_from/
     /// approve reverted, or balances did not move exactly as requested).
     TokenCompatibilityFailed = 22,
+    /// The post-deploy transfer/allowance compatibility canary has not
+    /// completed successfully yet, and liquidity cannot be enabled until it
+    /// passes.
+    CanaryNotCompleted = 23,
 }

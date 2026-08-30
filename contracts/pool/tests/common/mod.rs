@@ -100,6 +100,10 @@ pub enum HostileMode {
     FeeOnTransfer,
     /// Return Ok from transfer/transfer_from but move nothing.
     NoOp,
+    /// Refuse authorization: approve and every transfer/transfer_from
+    /// return an error, simulating a canonical asset whose SAC is frozen or
+    /// has revoked/unauthorized holders (no movement is possible).
+    Unauthorized,
     /// On transfer_from, call back into the configured pool.
     Reentrant,
 }
@@ -129,6 +133,8 @@ pub enum HostileError {
     AlreadyInitialized = 1,
     Overflow = 2,
     InsufficientBalance = 3,
+    /// Simulates a frozen/revoked asset: movement is not authorized.
+    UnauthorizedAsset = 4,
 }
 
 /// A SEP-41-shaped token whose behavior is configurable, for adversarial
@@ -203,12 +209,16 @@ impl HostileToken {
     }
 
     pub fn approve(
-        _env: Env,
+        env: Env,
         _from: Address,
         _spender: Address,
         _amount: i128,
         _expiration_ledger: u32,
     ) -> Result<(), HostileError> {
+        if mode(&env) == HostileMode::Unauthorized {
+            // A frozen/revoked SAC refuses to authorize any movement.
+            return Err(HostileError::UnauthorizedAsset);
+        }
         // Allowance semantics are not exercised by these tests; accept.
         Ok(())
     }
@@ -219,6 +229,10 @@ impl HostileToken {
         to: MuxedAddress,
         amount: i128,
     ) -> Result<(), HostileError> {
+        if mode(&env) == HostileMode::Unauthorized {
+            // A frozen/revoked SAC refuses every transfer.
+            return Err(HostileError::UnauthorizedAsset);
+        }
         if mode(&env) == HostileMode::NoOp {
             return Ok(());
         }
@@ -244,6 +258,10 @@ impl HostileToken {
         to: Address,
         amount: i128,
     ) -> Result<(), HostileError> {
+        if mode(&env) == HostileMode::Unauthorized {
+            // A frozen/revoked SAC refuses every transfer_from.
+            return Err(HostileError::UnauthorizedAsset);
+        }
         if mode(&env) == HostileMode::NoOp {
             return Ok(());
         }

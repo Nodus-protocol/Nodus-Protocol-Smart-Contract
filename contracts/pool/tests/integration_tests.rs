@@ -155,6 +155,68 @@ mod integration {
         assert!(!client.canary_verified());
     }
 
+    /// Criterion 6 enforcement: a freshly-initialized pool must not accept
+    /// its first liquidity until the post-deploy transfer/allowance canary
+    /// has passed. Calling `verify_token_compatibility` unlocks it.
+    #[test]
+    fn first_liquidity_locked_until_canary_passes() {
+        let env = env_with_seq();
+        let contract = env.register(NodusAmm, ());
+        let lp_token = env.register(NodusLpToken, ());
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        let t0 = register_hostile_at(
+            &env,
+            &xlm,
+            HostileMode::Normal,
+            &String::from_str(&env, registry::XLM_NAME),
+            &String::from_str(&env, registry::XLM_SYMBOL),
+            registry::XLM_DECIMALS,
+            &contract,
+        );
+        let t1 = register_hostile_at(
+            &env,
+            &usdc,
+            HostileMode::Normal,
+            &String::from_str(&env, registry::USDC_NAME),
+            &String::from_str(&env, registry::USDC_SYMBOL),
+            registry::USDC_DECIMALS,
+            &contract,
+        );
+        NodusLpTokenClient::new(&env, &lp_token).initialize(
+            &contract,
+            &String::from_str(&env, "Nodus LP"),
+            &String::from_str(&env, "NODUS-LP"),
+            &7,
+        );
+        let admin = Address::generate(&env);
+        client.initialize(&t0, &t1, &admin, &lp_token);
+
+        let provider = Address::generate(&env);
+        HostileTokenClient::new(&env, &t0).mint(&provider, &provider, &100_000);
+        HostileTokenClient::new(&env, &t1).mint(&provider, &provider, &100_000);
+        TokenClient::new(&env, &t0).approve(&provider, &contract, &100_000, &10_000);
+        TokenClient::new(&env, &t1).approve(&provider, &contract, &100_000, &10_000);
+
+        // No liquidity until the canary passes.
+        assert_eq!(
+            client.try_add_liquidity(&provider, &provider, &100_000, &100_000, &0, &0, &u64::MAX),
+            Err(Ok(nodus_protocol_amm::Error::CanaryNotCompleted))
+        );
+        let (r0, r1, _) = client.get_reserves();
+        assert_eq!(r0, 0);
+        assert_eq!(r1, 0);
+
+        // Passing the canary unlocks the first deposit.
+        HostileTokenClient::new(&env, &t0).mint(&admin, &admin, &10);
+        HostileTokenClient::new(&env, &t1).mint(&admin, &admin, &10);
+        client.verify_token_compatibility(&admin, &10);
+        assert!(client.canary_verified());
+        let liquidity =
+            client.add_liquidity(&provider, &provider, &100_000, &100_000, &0, &0, &u64::MAX);
+        assert!(liquidity > 0);
+    }
+
     /// A canary caller without funds must fail: the pull step reverts, which
     /// surfaces as TokenCompatibilityFailed rather than passing silently.
     #[test]
@@ -252,6 +314,58 @@ mod integration {
         assert!(!client.canary_verified());
     }
 
+    /// A canonical SAC in an unauthorized/frozen state (approve and every
+    /// transfer refuse, simulating a revoked asset or a frozen/unauthorized
+    /// holder) must be caught by the canary before liquidity can be enabled.
+    #[test]
+    fn canary_detects_unauthorized_token_at_canonical_address() {
+        let env = env_with_seq();
+        let contract = env.register(NodusAmm, ());
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        // The XLM side is a well-behaved stand-in; the USDC side is replaced
+        // by an implementation at the canonical address that refuses every
+        // approve/transfer (frozen / revoked), while still reporting
+        // canonical metadata.
+        let t0 = register_hostile_at(
+            &env,
+            &xlm,
+            HostileMode::Normal,
+            &String::from_str(&env, registry::XLM_NAME),
+            &String::from_str(&env, registry::XLM_SYMBOL),
+            registry::XLM_DECIMALS,
+            &contract,
+        );
+        let t1 = register_hostile_at(
+            &env,
+            &usdc,
+            HostileMode::Unauthorized,
+            &String::from_str(&env, registry::USDC_NAME),
+            &String::from_str(&env, registry::USDC_SYMBOL),
+            registry::USDC_DECIMALS,
+            &contract,
+        );
+        assert_eq!(t1, usdc);
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        // Initialization still succeeds: address and metadata are canonical.
+        client.initialize(&t0, &t1, &admin, &lp_token);
+
+        // The canary's approve step reflects the SAC refusing authorization.
+        assert_eq!(
+            client.try_verify_token_compatibility(&admin, &10),
+            Err(Ok(nodus_protocol_amm::Error::TokenCompatibilityFailed))
+        );
+        assert!(!client.canary_verified());
+
+        // Because the canary never passed, liquidity cannot be enabled.
+        let provider = Address::generate(&env);
+        assert_eq!(
+            client.try_add_liquidity(&provider, &provider, &100, &100, &0, &0, &u64::MAX),
+            Err(Ok(nodus_protocol_amm::Error::CanaryNotCompleted))
+        );
+    }
+
     // ── Reentrancy / malformed token behavior ─────────────────────────────
 
     /// A token that re-enters the pool from inside its transfer path must
@@ -299,6 +413,13 @@ mod integration {
 
         let client = NodusAmmClient::new(&env, &pool);
         client.initialize(&t0, &t1, &admin, &lp_token);
+
+        // Pass the activation canary (strict 1–10 stroop round trip) first:
+        // with the new enforcement, liquidity is locked until it passes.
+        HostileTokenClient::new(&env, &t0).mint(&admin, &admin, &10);
+        HostileTokenClient::new(&env, &t1).mint(&admin, &admin, &10);
+        client.verify_token_compatibility(&admin, &10);
+        assert!(client.canary_verified());
 
         HostileTokenClient::new(&env, &t0).mint(&provider, &provider, &1_000_000);
         HostileTokenClient::new(&env, &t1).mint(&provider, &provider, &1_000_000);
@@ -578,6 +699,14 @@ mod integration {
         let pool_client = NodusAmmClient::new(&env, &pool);
         pool_client.initialize(&t0, &t1, &admin, &lp_token);
 
+        // Pass the activation canary first: liquidity is locked until it
+        // passes (criterion 6 enforcement). The canary is a net-zero round
+        // trip, so it does not shift the post-conditions below.
+        HostileTokenClient::new(&env, &t0).mint(&admin, &admin, &10);
+        HostileTokenClient::new(&env, &t1).mint(&admin, &admin, &10);
+        pool_client.verify_token_compatibility(&admin, &10);
+        assert!(pool_client.canary_verified());
+
         let liquidity =
             pool_client.add_liquidity(&provider, &provider, &100_000, &100_000, &0, &0, &u64::MAX);
 
@@ -659,6 +788,14 @@ mod integration {
 
         let pool_client = NodusAmmClient::new(&env, &pool);
         pool_client.initialize(&t0, &t1, &admin, &lp_token);
+
+        // Pass the activation canary first: liquidity is locked until it
+        // passes (criterion 6 enforcement).
+        HostileTokenClient::new(&env, &t0).mint(&admin, &admin, &10);
+        HostileTokenClient::new(&env, &t1).mint(&admin, &admin, &10);
+        pool_client.verify_token_compatibility(&admin, &10);
+        assert!(pool_client.canary_verified());
+
         pool_client.add_liquidity(&provider, &provider, &100_000, &100_000, &0, &0, &u64::MAX);
 
         // Swap 1_000 XLM for USDC (0.3% fee).

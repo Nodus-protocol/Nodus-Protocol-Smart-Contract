@@ -21,6 +21,21 @@ pair is rejected at initialization before any state is written.
 > empirically from the real SACs in the sandbox and are pinned as constants
 > in `registry.rs`.
 
+## Pinned canonical SAC contract addresses (release artifact)
+
+Per CAP-46-3 the SAC contract address is a deterministic function of the
+asset definition, so it is **network-independent**. The addresses below are
+what `registry::derive_canonical_address` computes for the reviewed
+definitions above; they are pinned in `registry.rs` (and cross-checked by a
+unit test that re-derives them) as the shared release artifact for Backend /
+Core Engine / Frontend / Mobile to consume:
+
+| Side | Asset definition | Derived SAC address (`registry.rs` constant) |
+|------|------------------|---------------------------------------------|
+| `token_0` | Native XLM | `CB56OQJZFJXSSKFK3MXJZ4TLJAJFWH6KXN6BAWHQSJDZPHZFVBJ353HU` (`XLM_SAC_ADDRESS`) |
+| `token_1` | USDC / `GA5ZSEJY…KZVN` | `CCAGPNTODUR2Z3JHN26WFINU3GUB3PIXBVQJIFN54CKZ3XWTGDJSSACA` (`USDC_SAC_ADDRESS`) |
+
+
 ## How identity is pinned on-chain (the proof)
 
 Soroban derives a Stellar Asset Contract's address deterministically from
@@ -70,6 +85,13 @@ it (see the issue's follow-ups).
 
 ## `verify_token_compatibility` (post-deploy canary)
 
+**Enforced as an activation gate.** `add_liquidity` refuses the *first*
+deposit until the canary has passed (`Error::CanaryNotCompleted`): the pool
+cannot become liquid against a canonical SAC whose approve/transfer path
+does not behave, so a tampered/upgraded implementation at a pinned address
+is caught before any liquidity exists. Once reserves exist the canary has
+already passed, so this is an activation-only gate.
+
 Admin-only (`fee_to_setter`), reentrancy-locked, limited to `1..=10` stroops
 per side (strict canary limits). For **each** pool token it runs a full
 round trip:
@@ -111,13 +133,16 @@ activation, before the pool is exposed to users.
 ## Release checklist
 
 - [ ] `registry.rs` asset definitions (native XLM; USDC issuer
-      `GA5ZSEJY…KZVN`) reviewed and signed off.
+      `GA5ZSEJY…KZVN`) reviewed and signed off; pinned addresses
+      (`XLM_SAC_ADDRESS` / `USDC_SAC_ADDRESS`) confirmed against the
+      derivation test.
 - [ ] `initialize` derived-address checks pass against the reviewed
       definitions on the target network.
 - [ ] `name`/`symbol`/`decimals` of the live SACs on the target network
       match the table above.
 - [ ] `verify_token_compatibility` canary executed (strict 1–10 stroop
-      limits) and `canary_verified()` confirmed before enabling liquidity.
+      limits); `canary_verified()` is a hard prerequisite enforced by
+      `add_liquidity` before the first deposit.
 - [ ] Validated identities published for Backend / Core Engine / Frontend /
       Mobile.
 - [ ] Issuer clawback/freeze implications surfaced in product UI.

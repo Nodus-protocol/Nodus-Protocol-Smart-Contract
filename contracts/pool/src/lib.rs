@@ -329,7 +329,10 @@ impl NodusAmm {
     ///
     /// Gated to the `fee_to_setter` admin, limited to `1..=10` stroops per
     /// side (a strict canary limit), and reentrancy-locked like the
-    /// liquidity entrypoints. Recorded via `canary_verified()`.
+    /// liquidity entrypoints. Recorded via `canary_verified()`, which
+    /// an in-contract gate then **requires before the first deposit at
+    /// `add_liquidity`** — a pool cannot become liquid at all until the
+    /// canary passes (issue #122 criterion 6).
     pub fn verify_token_compatibility(
         env: Env,
         caller: Address,
@@ -397,6 +400,17 @@ impl NodusAmm {
 
         let reserve_0 = get_reserve_0(&env);
         let reserve_1 = get_reserve_1(&env);
+
+        // The first deposit is what enables liquidity. Before any reserves
+        // exist, require the post-deploy transfer/allowance compatibility
+        // canary to have passed (issue #122 criterion 6): the pool must not
+        // become liquid against a canonical SAC that fails the strict
+        // approve/transfer round-trip. Once reserves exist the canary has
+        // already passed, so this is an activation-only gate.
+        if reserve_0 == 0 && reserve_1 == 0 && !Self::canary_verified(env.clone()) {
+            unlock(&env);
+            return Err(Error::CanaryNotCompleted);
+        }
 
         let (amount_0, amount_1) = if reserve_0 == 0 && reserve_1 == 0 {
             (amount_0_desired, amount_1_desired)

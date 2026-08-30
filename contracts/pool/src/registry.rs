@@ -97,6 +97,17 @@ pub const USDC_NAME: &str = "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5
 pub const USDC_SYMBOL: &str = "USDC";
 pub const USDC_DECIMALS: u32 = 7;
 
+// ── Pinned canonical SAC contract addresses (release artifact) ────────────
+/// The SAC contract addresses that [`derive_canonical_address`] computes for
+/// the reviewed asset definitions above (CAP-46-3, so network-independent).
+/// These are pinned here as the reviewable release artifact and cross-checked
+/// by a unit test that re-derives them; consumers (Backend / Core Engine /
+/// Frontend / Mobile) can pin the same values. A live SAC at one of these
+/// addresses can still be a tampered/upgraded implementation — that residual
+/// is covered by [`crate::NodusAmm::verify_token_compatibility`].
+pub const XLM_SAC_ADDRESS: &str = "CB56OQJZFJXSSKFK3MXJZ4TLJAJFWH6KXN6BAWHQSJDZPHZFVBJ353HU";
+pub const USDC_SAC_ADDRESS: &str = "CCAGPNTODUR2Z3JHN26WFINU3GUB3PIXBVQJIFN54CKZ3XWTGDJSSACA";
+
 /// Derives the canonical Stellar Asset Contract address for a serialized
 /// asset (the host's `get_asset_contract_id`). Pure computation — no auth,
 /// no deployment.
@@ -199,6 +210,27 @@ mod tests {
             pk[i] = byte;
         }
         assert_eq!(pk, USDC_ISSUER);
+    }
+
+    #[test]
+    fn derived_sac_addresses_match_pinned_release_artifact() {
+        // The pinned artifact addresses must be exactly what the host derives
+        // from the reviewed asset definitions — this is the identity check
+        // `initialize` relies on.
+        let env = Env::default();
+        let xlm = derive_canonical_address(&env, &XLM_ASSET_XDR);
+        let xlm_artifact = Address::from_str(&env, XLM_SAC_ADDRESS);
+        assert_eq!(
+            xlm, xlm_artifact,
+            "pinned XLM SAC address must match derivation"
+        );
+
+        let usdc = derive_canonical_address(&env, &USDC_ASSET_XDR);
+        let usdc_artifact = Address::from_str(&env, USDC_SAC_ADDRESS);
+        assert_eq!(
+            usdc, usdc_artifact,
+            "pinned USDC SAC address must match derivation"
+        );
     }
 
     #[test]

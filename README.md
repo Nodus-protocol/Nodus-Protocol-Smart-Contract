@@ -230,12 +230,15 @@ non-contract pairs are rejected before any state is written (issue #122).
 Activation emits a registry event (`v1_reg`) exposing the canonical
 identities and pinned contract addresses for off-chain consumers.
 
-After activation, deploy automation should call the admin-only
-`verify_token_compatibility` entrypoint — a strict, 1–10 stroop
-transfer/allowance round trip against both tokens (approve → pull → exact
-balance → push back → zero balance) that catches a canonical SAC upgraded
-or replaced with a non-conforming implementation (fee-on-transfer, dropped
-transfers, broken authorization) before liquidity is enabled. See
+After activation, the admin calls `verify_token_compatibility` — a strict,
+1–10 stroop transfer/allowance round trip against both tokens (approve →
+pull → exact balance → push back → zero balance) that catches a canonical
+SAC upgraded or replaced with a non-conforming implementation
+(fee-on-transfer, dropped transfers, broken authorization). It is enforced
+as an **activation gate**: `add_liquidity` refuses the first deposit until
+`canary_verified()` is true. The derived canonical SAC addresses are pinned
+as constants (`XLM_SAC_ADDRESS` / `USDC_SAC_ADDRESS`) for cross-team
+consumption. See
 [`docs/canonical-assets.md`](docs/canonical-assets.md) for the full
 verification model, the issuer clawback/freeze implications of holding
 USDC, and the canary procedure.
