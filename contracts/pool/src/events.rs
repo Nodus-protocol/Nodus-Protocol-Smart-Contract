@@ -1,5 +1,5 @@
 #![allow(deprecated)]
-use soroban_sdk::{contracttype, symbol_short, Address, Env};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String};
 
 #[contracttype]
 pub struct MintEvent {
@@ -39,6 +39,28 @@ pub struct PausedEvent {
 
 #[contracttype]
 pub struct UnpausedEvent {
+    pub caller: Address,
+}
+
+/// Emitted once when a pool becomes active, exposing the canonical asset
+/// identifiers and the SAC contract addresses so off-chain consumers
+/// (Backend, Core Engine, Frontend, Mobile) can trust the pair without
+/// re-deriving it. `canonical_id_0`/`canonical_id_1` are the immutable
+/// canonical asset identifiers (for XLM: `native`; for USDC:
+/// `USDC:GA5Z…`), and the addresses are the SAC contract addresses derived
+/// from those definitions. See `docs/canonical-assets.md`.
+#[contracttype]
+pub struct PoolActivatedEvent {
+    pub token_0: Address,
+    pub token_1: Address,
+    pub canonical_id_0: String,
+    pub canonical_id_1: String,
+}
+
+/// Emitted when the post-deploy transfer/allowance compatibility canary
+/// completes successfully.
+#[contracttype]
+pub struct CanaryPassedEvent {
     pub caller: Address,
 }
 
@@ -136,6 +158,35 @@ pub fn emit_unpaused(env: &Env, caller: Address) {
     );
 }
 
+/// Emits the pool-activation (registry) event. See [`emit_mint`] for the
+/// multi-pool indexing rationale.
+pub fn emit_pool_activated(
+    env: &Env,
+    token_0: Address,
+    token_1: Address,
+    canonical_id_0: String,
+    canonical_id_1: String,
+) {
+    env.events().publish(
+        (symbol_short!("v1_reg"), env.current_contract_address()),
+        PoolActivatedEvent {
+            token_0,
+            token_1,
+            canonical_id_0,
+            canonical_id_1,
+        },
+    );
+}
+
+/// Emits a canary-passed event. See [`emit_mint`] for the multi-pool
+/// indexing rationale.
+pub fn emit_canary_passed(env: &Env, caller: Address) {
+    env.events().publish(
+        (symbol_short!("v1_canary"), env.current_contract_address()),
+        CanaryPassedEvent { caller },
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +252,46 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             emit_sync(&env, 1_000, 2_000);
+        });
+
+        let filtered = env.events().all().filter_by_contract(&contract_id);
+        assert_eq!(filtered.events().len(), 1);
+    }
+
+    #[test]
+    fn pool_activated_event_is_attributable_to_contract() {
+        let (env, contract_id) = setup_env_and_contract();
+        let token_0 = Address::generate(&env);
+        let token_1 = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            emit_pool_activated(
+                &env,
+                token_0.clone(),
+                token_1.clone(),
+                String::from_str(&env, "native"),
+                String::from_str(
+                    &env,
+                    "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+                ),
+            );
+        });
+
+        let filtered = env.events().all().filter_by_contract(&contract_id);
+        assert_eq!(
+            filtered.events().len(),
+            1,
+            "exactly one event must be attributable to the emitting contract"
+        );
+    }
+
+    #[test]
+    fn canary_passed_event_is_attributable_to_contract() {
+        let (env, contract_id) = setup_env_and_contract();
+        let caller = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            emit_canary_passed(&env, caller);
         });
 
         let filtered = env.events().all().filter_by_contract(&contract_id);

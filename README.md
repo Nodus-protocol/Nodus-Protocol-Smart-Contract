@@ -96,7 +96,7 @@ contracts/
 
 | Function | Auth | Description |
 |----------|------|-------------|
-| `initialize(token_0, token_1, fee_to_setter, lp_token)` | — | One-time setup. `lp_token` must already be a deployed, uninitialized `nodus-protocol-lp-token` instance — this contract never deploys or initializes it itself; that's the factory's job (planned). |
+| `initialize(token_0, token_1, fee_to_setter, lp_token)` | — | One-time setup. `lp_token` must already be a deployed, uninitialized `nodus-protocol-lp-token` instance — this contract never deploys or initializes it itself; that's the factory's job (planned). The token pair is pinned: `token_0` must be the canonical XLM Stellar Asset Contract and `token_1` the canonical USDC Stellar Asset Contract, in that order. Each side's address is **derived on-chain** from the reviewed asset definition and must match exactly, and must then pass SEP-41 interface, canonical `name`/`symbol`/`decimals`, and zero-balance checks before the pool becomes active; reversed, unknown, impostor, wrong-decimals, or non-contract pairs are rejected. See [Canonical assets](#canonical-assets) and `docs/canonical-assets.md`. |
 | `sync()` | — | Reconcile reserves with actual contract token balances. |
 
 ### Liquidity
@@ -211,6 +211,37 @@ initialized with it), then initializes the pool. `LP_TOKEN_NAME` /
 This is manual, one-pair-at-a-time tooling. The planned factory contract
 will do this deployment + wiring on-chain, for any token pair, without a
 human running a script per pool.
+
+---
+
+## Canonical assets
+
+The v1 pool is pinned to one reviewed pair: XLM (native Stellar) as
+`token_0` and Circle's USDC on Stellar as `token_1`, both with 7 decimals
+and canonical SEP-41 metadata defined in `contracts/pool/src/registry.rs`.
+`initialize` derives the canonical XLM/USDC Stellar Asset Contract
+addresses **on-chain** from the reviewed asset definitions
+(`registry::derive_canonical_address`, the host's `get_asset_contract_id`)
+and requires the supplied token addresses to match exactly — that derived
+address is the identity proof, not metadata. On top of it each side must
+speak SEP-41, report the canonical `name`/`symbol`/`decimals`, and hold a
+zero balance at the pool. Reversed/unknown/impostor/wrong-decimals/
+non-contract pairs are rejected before any state is written (issue #122).
+Activation emits a registry event (`v1_reg`) exposing the canonical
+identities and pinned contract addresses for off-chain consumers.
+
+After activation, the admin calls `verify_token_compatibility` — a strict,
+1–10 stroop transfer/allowance round trip against both tokens (approve →
+pull → exact balance → push back → zero balance) that catches a canonical
+SAC upgraded or replaced with a non-conforming implementation
+(fee-on-transfer, dropped transfers, broken authorization). It is enforced
+as an **activation gate**: `add_liquidity` refuses the first deposit until
+`canary_verified()` is true. The derived canonical SAC addresses are pinned
+as constants (`XLM_SAC_ADDRESS` / `USDC_SAC_ADDRESS`) for cross-team
+consumption. See
+[`docs/canonical-assets.md`](docs/canonical-assets.md) for the full
+verification model, the issuer clawback/freeze implications of holding
+USDC, and the canary procedure.
 
 ---
 

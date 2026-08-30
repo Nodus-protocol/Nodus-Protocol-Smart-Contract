@@ -17,4 +17,7 @@ pub enum DataKey {
     FeeTo,
     FeeToSetter,
     Paused,
+    /// Set once the post-deploy transfer/allowance compatibility canary has
+    /// run successfully for this pool.
+    CanaryVerified,
 }

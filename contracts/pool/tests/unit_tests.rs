@@ -122,60 +122,241 @@ mod liquidity_pool_tests {
 
 #[cfg(test)]
 #[cfg(feature = "testutils")]
+mod common;
+
+#[cfg(test)]
+#[cfg(feature = "testutils")]
 mod soroban_contract_tests {
-    use nodus_protocol_amm::{NodusAmm, NodusAmmClient};
+    use crate::common::{
+        deploy_canonical_sacs, env_with_seq, register_hostile_at, HostileMode, NonToken,
+    };
+    use nodus_protocol_amm::{registry, NodusAmm, NodusAmmClient};
+    use nodus_protocol_lp_token::NodusLpToken;
     use soroban_sdk::{
         testutils::{Address as _, Ledger as _},
-        Address, Env,
+        Address, Env, String,
     };
 
     fn setup() -> (Env, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
+        let env = env_with_seq();
         let contract = env.register(NodusAmm, ());
         (env, contract)
     }
 
     #[test]
-    fn initialize_accepts_distinct_tokens() {
+    fn initialize_accepts_canonical_pair() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
         let admin = Address::generate(&env);
         let lp_token = Address::generate(&env);
-        assert!(client.try_initialize(&t0, &t1, &admin, &lp_token).is_ok());
+        assert!(client
+            .try_initialize(&xlm, &usdc, &admin, &lp_token)
+            .is_ok());
+        // The pinned, derived addresses are what get stored.
+        assert_eq!(client.token_0(), xlm);
+        assert_eq!(client.token_1(), usdc);
     }
 
     #[test]
     fn initialize_rejects_identical_tokens() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t = Address::generate(&env);
+        let (xlm, _) = deploy_canonical_sacs(&env);
         let admin = Address::generate(&env);
         let lp_token = Address::generate(&env);
-        assert!(client.try_initialize(&t, &t, &admin, &lp_token).is_err());
+        assert_eq!(
+            client.try_initialize(&xlm, &xlm, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::InvalidTokenPair))
+        );
+    }
+
+    /// Reversed pair (USDC as token_0, XLM as token_1) must be rejected:
+    /// token_0 is pinned to the derived XLM SAC address, so this fails with
+    /// UnsupportedAsset before any state is written.
+    #[test]
+    fn initialize_rejects_reversed_pair() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&usdc, &xlm, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::UnsupportedAsset))
+        );
+        // Nothing was stored: the pool must not be active.
+        assert!(client.try_token_0().is_err());
+        assert!(client.try_token_1().is_err());
+    }
+
+    /// A pool for a pair that is not in the accepted canonical set (a
+    /// random asset) must be rejected.
+    #[test]
+    fn initialize_rejects_unknown_pair() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, _) = deploy_canonical_sacs(&env);
+        let random_sac = env
+            .register_stellar_asset_contract_v2(Address::generate(&env))
+            .address();
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&xlm, &random_sac, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::UnsupportedAsset))
+        );
+    }
+
+    /// A contract reporting *perfect* canonical metadata from the wrong
+    /// address must be rejected: identity is the derived canonical address,
+    /// symbol/name/decimals are never proof.
+    #[test]
+    fn initialize_rejects_impostor_with_matching_metadata() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        // A SEP-41 token with the exact canonical XLM metadata, but at a
+        // non-canonical address.
+        let impostor = env.register(NodusLpToken, ());
+        let impostor_client = nodus_protocol_lp_token::NodusLpTokenClient::new(&env, &impostor);
+        impostor_client.initialize(
+            &Address::generate(&env),
+            &String::from_str(&env, registry::XLM_NAME),
+            &String::from_str(&env, registry::XLM_SYMBOL),
+            &registry::XLM_DECIMALS,
+        );
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_ne!(impostor, xlm);
+        assert_eq!(
+            client.try_initialize(&impostor, &usdc, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::UnsupportedAsset))
+        );
+    }
+
+    /// A contract sitting at the *canonical* XLM address but reporting the
+    /// wrong decimals must be rejected by the metadata defense-in-depth
+    /// check.
+    #[test]
+    fn initialize_rejects_hostile_token_at_canonical_address_with_wrong_decimals() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        let hostile = register_hostile_at(
+            &env,
+            &xlm,
+            HostileMode::Normal,
+            &String::from_str(&env, registry::XLM_NAME),
+            &String::from_str(&env, registry::XLM_SYMBOL),
+            6,
+            &contract,
+        );
+        assert_eq!(hostile, xlm);
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&hostile, &usdc, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::WrongDecimals))
+        );
+    }
+
+    /// A contract sitting at the *canonical* USDC address but reporting
+    /// wrong name metadata must be rejected.
+    #[test]
+    fn initialize_rejects_hostile_token_at_canonical_address_with_wrong_name() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        let hostile = register_hostile_at(
+            &env,
+            &usdc,
+            HostileMode::Normal,
+            &String::from_str(&env, "Evil Coin"),
+            &String::from_str(&env, registry::USDC_SYMBOL),
+            registry::USDC_DECIMALS,
+            &contract,
+        );
+        assert_eq!(hostile, usdc);
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&xlm, &hostile, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::UnsupportedAsset))
+        );
+    }
+
+    /// A deployed contract that is not a token at all, even at a canonical
+    /// address, must be rejected as not being a token contract.
+    #[test]
+    fn initialize_rejects_non_token_contract_at_canonical_address() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        env.register_at(&usdc, NonToken, ());
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&xlm, &usdc, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::NotTokenContract))
+        );
+    }
+
+    /// A deployed but never-initialized token contract at a canonical
+    /// address (metadata calls revert) must be rejected.
+    #[test]
+    fn initialize_rejects_uninitialized_token_contract_at_canonical_address() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        env.register_at(&usdc, NodusLpToken, ());
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&xlm, &usdc, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::NotTokenContract))
+        );
+    }
+
+    /// A bare account address (no contract behind it) must be rejected.
+    #[test]
+    fn initialize_rejects_non_contract_address() {
+        let (env, contract) = setup();
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, _) = deploy_canonical_sacs(&env);
+        let not_a_contract = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+        assert_eq!(
+            client.try_initialize(&xlm, &not_a_contract, &admin, &lp_token),
+            Err(Ok(nodus_protocol_amm::Error::UnsupportedAsset))
+        );
     }
 
     #[test]
     fn double_initialize_rejected() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
         let admin = Address::generate(&env);
         let lp_token = Address::generate(&env);
-        client.initialize(&t0, &t1, &admin, &lp_token);
-        assert!(client.try_initialize(&t0, &t1, &admin, &lp_token).is_err());
+        client.initialize(&xlm, &usdc, &admin, &lp_token);
+        assert!(client
+            .try_initialize(&xlm, &usdc, &admin, &lp_token)
+            .is_err());
     }
 
     #[test]
     fn get_reserves_initial_zero() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1, &Address::generate(&env), &Address::generate(&env));
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        client.initialize(
+            &xlm,
+            &usdc,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
         let (r0, r1, _) = client.get_reserves();
         assert_eq!(r0, 0);
         assert_eq!(r1, 0);
@@ -185,9 +366,13 @@ mod soroban_contract_tests {
     fn expired_deadline_rejected() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1, &Address::generate(&env), &Address::generate(&env));
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        client.initialize(
+            &xlm,
+            &usdc,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
         env.ledger().set_timestamp(2_000);
         let from = Address::generate(&env);
         let to = Address::generate(&env);
@@ -208,10 +393,9 @@ mod soroban_contract_tests {
     fn lp_token_readable_after_init() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
         let lp_token = Address::generate(&env);
-        client.initialize(&t0, &t1, &Address::generate(&env), &lp_token);
+        client.initialize(&xlm, &usdc, &Address::generate(&env), &lp_token);
         assert_eq!(client.lp_token(), lp_token);
     }
 
@@ -219,9 +403,13 @@ mod soroban_contract_tests {
     fn price_cumulatives_start_zero() {
         let (env, contract) = setup();
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
-        client.initialize(&t0, &t1, &Address::generate(&env), &Address::generate(&env));
+        let (xlm, usdc) = deploy_canonical_sacs(&env);
+        client.initialize(
+            &xlm,
+            &usdc,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
         let (p0, p1) = client.get_price_cumulative();
         assert_eq!(p0, 0u128);
         assert_eq!(p1, 0u128);

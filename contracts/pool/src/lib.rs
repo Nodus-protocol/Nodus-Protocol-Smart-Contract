@@ -1,11 +1,12 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
-use soroban_sdk::{contract, contractimpl, token::Client as TokenClient, Address, Env};
+use soroban_sdk::{contract, contractimpl, token::Client as TokenClient, Address, Env, String};
 
 pub mod errors;
 pub mod events;
 pub mod liquidity_pool;
 pub mod math;
+pub mod registry;
 pub mod storage;
 pub mod traits;
 
@@ -33,6 +34,11 @@ use lp_token_contract::Client as LpTokenClient;
 
 const INSTANCE_TTL_THRESHOLD: u32 = 100;
 const INSTANCE_TTL_BUMP: u32 = 500;
+
+/// Upper bound (in stroops) for the post-deploy transfer/allowance
+/// compatibility canary. Canary amounts are deliberately tiny: the check
+/// proves the tokens' write path works with negligible exposure.
+const CANARY_MAX_AMOUNT: i128 = 10;
 
 fn require_initialized(env: &Env) -> Result<(), Error> {
     if !env
@@ -165,6 +171,61 @@ fn token_push(env: &Env, token: &Address, to: &Address, amount: i128) {
     TokenClient::new(env, token).transfer(&env.current_contract_address(), to, &amount);
 }
 
+/// Runs the strict transfer/allowance canary round trip against a single
+/// pool token: approve → transfer_from → verify pool balance → transfer
+/// back → verify the pool balance is zero again. Any failure — a revert, a
+/// missing/consumed allowance, or a balance that doesn't move exactly as
+/// requested — maps to [`Error::TokenCompatibilityFailed`]. See
+/// [`NodusAmm::verify_token_compatibility`].
+fn canary_token(env: &Env, token: &Address, caller: &Address, amount: i128) -> Result<(), Error> {
+    let pool = env.current_contract_address();
+    let client = TokenClient::new(env, token);
+
+    // 1. Caller approves the pool for exactly `amount`.
+    if client
+        .try_approve(caller, &pool, &amount, &u32::MAX)
+        .ok()
+        .and_then(|r| r.ok())
+        .is_none()
+    {
+        return Err(Error::TokenCompatibilityFailed);
+    }
+
+    // 2. Pool pulls the canary amount in via transfer_from.
+    if client
+        .try_transfer_from(&pool, caller, &pool, &amount)
+        .ok()
+        .and_then(|r| r.ok())
+        .is_none()
+    {
+        return Err(Error::TokenCompatibilityFailed);
+    }
+
+    // 3. The pool balance must now be exactly `amount` — this is what
+    //    catches fee-on-transfer, silently dropped, or partial transfers.
+    let balance = registry::unwrap_token_call(client.try_balance(&pool))?;
+    if balance != amount {
+        return Err(Error::TokenCompatibilityFailed);
+    }
+
+    // 4. Pool pushes the canary amount back.
+    if client
+        .try_transfer(&pool, caller, &amount)
+        .ok()
+        .and_then(|r| r.ok())
+        .is_none()
+    {
+        return Err(Error::TokenCompatibilityFailed);
+    }
+
+    // 5. The pool balance must be zero again, proving the full round trip.
+    let balance = registry::unwrap_token_call(client.try_balance(&pool))?;
+    if balance != 0 {
+        return Err(Error::TokenCompatibilityFailed);
+    }
+    Ok(())
+}
+
 fn dead_address(env: &Env) -> Address {
     env.current_contract_address()
 }
@@ -183,6 +244,21 @@ impl NodusAmm {
     /// nodus-protocol-lp-token instance; the factory is responsible for
     /// deploying it and handing its address here. This contract never
     /// deploys or initializes the LP token itself.
+    ///
+    /// The token pair is not free-form: `token_0` must be the canonical XLM
+    /// Stellar Asset Contract and `token_1` the canonical USDC Stellar
+    /// Asset Contract, in that pinned order (see [`registry`]). Identity is
+    /// established on-chain by **deriving** the expected SAC addresses from
+    /// the reviewed canonical asset definitions (native XLM; USDC with
+    /// Circle's Stellar issuer) and requiring the supplied addresses to
+    /// match exactly — symbol/name/decimals alone are never proof. Each
+    /// side is then additionally checked for SEP-41 behavior (metadata,
+    /// decimals, zero balance at the pool) before any state is written.
+    /// This rejects same-symbol impostors, incompatible contracts,
+    /// wrong-network deployments, wrong-decimals tokens, reversed pairs,
+    /// and unknown assets at initialization (issue #122). On success an
+    /// activation event exposes the canonical asset identifiers and the
+    /// pinned contract addresses.
     pub fn initialize(
         env: Env,
         token_0: Address,
@@ -201,6 +277,22 @@ impl NodusAmm {
         if token_0 == token_1 {
             return Err(Error::InvalidTokenPair);
         }
+        registry::verify_canonical_token(
+            &env,
+            &token_0,
+            &registry::XLM_ASSET_XDR,
+            registry::XLM_NAME,
+            registry::XLM_SYMBOL,
+            registry::XLM_DECIMALS,
+        )?;
+        registry::verify_canonical_token(
+            &env,
+            &token_1,
+            &registry::USDC_ASSET_XDR,
+            registry::USDC_NAME,
+            registry::USDC_SYMBOL,
+            registry::USDC_DECIMALS,
+        )?;
         env.storage().instance().set(&DataKey::Token0, &token_0);
         env.storage().instance().set(&DataKey::Token1, &token_1);
         env.storage().instance().set(&DataKey::LpToken, &lp_token);
@@ -211,7 +303,74 @@ impl NodusAmm {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        events::emit_pool_activated(
+            &env,
+            token_0,
+            token_1,
+            String::from_str(&env, registry::XLM_NAME),
+            String::from_str(&env, registry::USDC_NAME),
+        );
         Ok(())
+    }
+
+    /// Post-deploy transfer/allowance compatibility canary (issue #122).
+    ///
+    /// Runs a strict, tiny round trip against **both** pool tokens to prove
+    /// their write path works end to end before liquidity is enabled:
+    /// `caller` approves the pool, the pool pulls `amount` in via
+    /// `transfer_from`, verifies its balance increased by exactly `amount`,
+    /// pushes it back via `transfer`, and verifies the pool balance is again
+    /// zero. Any revert, missing allowance, or balance that does not move
+    /// exactly as requested fails with [`Error::TokenCompatibilityFailed`].
+    /// This catches a canonical SAC that has been upgraded or replaced with
+    /// a non-conforming implementation (fee-on-transfer, silently dropped
+    /// transfers, broken authorization) even though it sits at the derived
+    /// canonical address.
+    ///
+    /// Gated to the `fee_to_setter` admin, limited to `1..=10` stroops per
+    /// side (a strict canary limit), and reentrancy-locked like the
+    /// liquidity entrypoints. Recorded via `canary_verified()`, which
+    /// an in-contract gate then **requires before the first deposit at
+    /// `add_liquidity`** — a pool cannot become liquid at all until the
+    /// canary passes (issue #122 criterion 6).
+    pub fn verify_token_compatibility(
+        env: Env,
+        caller: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        require_initialized(&env)?;
+        require_fee_to_setter(&env, &caller)?;
+        if !(1..=CANARY_MAX_AMOUNT).contains(&amount) {
+            return Err(Error::InvalidCanaryAmount);
+        }
+        lock(&env)?;
+        let result = (|| -> Result<(), Error> {
+            let token_0: Address = env.storage().instance().get(&DataKey::Token0).unwrap();
+            let token_1: Address = env.storage().instance().get(&DataKey::Token1).unwrap();
+            canary_token(&env, &token_0, &caller, amount)?;
+            canary_token(&env, &token_1, &caller, amount)?;
+            Ok(())
+        })();
+        if result.is_err() {
+            unlock(&env);
+            return result;
+        }
+        env.storage()
+            .instance()
+            .set(&DataKey::CanaryVerified, &true);
+        unlock(&env);
+        events::emit_canary_passed(&env, caller);
+        Ok(())
+    }
+
+    /// Whether the post-deploy transfer/allowance compatibility canary has
+    /// completed successfully. Lets deploy automation and off-chain
+    /// monitors confirm the pool passed its activation check.
+    pub fn canary_verified(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::CanaryVerified)
+            .unwrap_or(false)
     }
 
     pub fn add_liquidity(
@@ -241,6 +400,17 @@ impl NodusAmm {
 
         let reserve_0 = get_reserve_0(&env);
         let reserve_1 = get_reserve_1(&env);
+
+        // The first deposit is what enables liquidity. Before any reserves
+        // exist, require the post-deploy transfer/allowance compatibility
+        // canary to have passed (issue #122 criterion 6): the pool must not
+        // become liquid against a canonical SAC that fails the strict
+        // approve/transfer round-trip. Once reserves exist the canary has
+        // already passed, so this is an activation-only gate.
+        if reserve_0 == 0 && reserve_1 == 0 && !Self::canary_verified(env.clone()) {
+            unlock(&env);
+            return Err(Error::CanaryNotCompleted);
+        }
 
         let (amount_0, amount_1) = if reserve_0 == 0 && reserve_1 == 0 {
             (amount_0_desired, amount_1_desired)
@@ -659,7 +829,7 @@ impl NodusAmm {
     // ── Protocol fee collector ──────────────────────────────────────────────
 
     /// Sets the recipient of the protocol fee.
-    /// 
+    ///
     /// # Important
     /// Protocol fee collection is currently **not implemented** in the pool.
     /// This is a reserved administrative endpoint; setting this value updates the configuration
@@ -682,7 +852,7 @@ impl NodusAmm {
     }
 
     /// Returns the protocol fee recipient address, if configured.
-    /// 
+    ///
     /// # Important
     /// Protocol fee collection is currently **not implemented** in the pool.
     /// This function is non-functional/inert and is only a configuration query.

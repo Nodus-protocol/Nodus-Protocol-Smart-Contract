@@ -9,6 +9,10 @@ target/
 *.json
 .metadata/
 
+# Issue #122 published canonical asset registry (source artifact, not a build artifact)
+!docs/canonical-assets.json
+!docs/canonical-assets.schema.json
+
 # IDE
 .idea/
 .vscode/
