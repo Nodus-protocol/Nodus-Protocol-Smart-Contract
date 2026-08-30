@@ -941,6 +941,7 @@ name = "nodus-protocol-amm"
 version = "0.1.0"
 dependencies = [
  "nodus-protocol-lp-token",
+ "serde_json",
  "soroban-sdk",
 ]
 

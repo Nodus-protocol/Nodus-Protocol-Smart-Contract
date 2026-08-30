@@ -35,6 +35,18 @@ Core Engine / Frontend / Mobile to consume:
 | `token_0` | Native XLM | `CB56OQJZFJXSSKFK3MXJZ4TLJAJFWH6KXN6BAWHQSJDZPHZFVBJ353HU` (`XLM_SAC_ADDRESS`) |
 | `token_1` | USDC / `GA5ZSEJY…KZVN` | `CCAGPNTODUR2Z3JHN26WFINU3GUB3PIXBVQJIFN54CKZ3XWTGDJSSACA` (`USDC_SAC_ADDRESS`) |
 
+### Machine-readable artifact for consumers
+
+The validated identities above are also published in
+[`docs/canonical-assets.json`](./canonical-assets.json) — the
+machine-readable registry Backend / Core Engine / Frontend / Mobile should
+pin (asset XDR, SAC address, name/symbol/decimals, issuer, and issuer
+clawback/freeze capabilities, plus the canary limits). The contract's own
+[`registry.rs`](../contracts/pool/src/registry.rs) is the source of truth,
+and a regression test
+(`published_release_artifact_matches_contract_constants`) fails if the JSON
+ever drifts from the on-chain constants, so the artifact stays authoritative.
+
 
 ## How identity is pinned on-chain (the proof)
 
@@ -132,17 +144,20 @@ activation, before the pool is exposed to users.
 
 ## Release checklist
 
-- [ ] `registry.rs` asset definitions (native XLM; USDC issuer
-      `GA5ZSEJY…KZVN`) reviewed and signed off; pinned addresses
-      (`XLM_SAC_ADDRESS` / `USDC_SAC_ADDRESS`) confirmed against the
-      derivation test.
+- [x] `registry.rs` asset definitions (native XLM; USDC issuer
+      `GA5ZSEJY…KZVN`) reviewed and pinned; pinned addresses
+      (`XLM_SAC_ADDRESS` / `USDC_SAC_ADDRESS`) confirmed by the derivation
+      test.
+- [x] `verify_token_compatibility` canary implemented and tested (strict
+      1–10 stroop limits); `canary_verified()` is a hard prerequisite
+      enforced by `add_liquidity` before the first deposit.
+- [x] Validated identities published for Backend / Core Engine / Frontend /
+      Mobile in [`docs/canonical-assets.json`](./canonical-assets.json).
 - [ ] `initialize` derived-address checks pass against the reviewed
-      definitions on the target network.
+      definitions on the target network (deploy-time).
 - [ ] `name`/`symbol`/`decimals` of the live SACs on the target network
-      match the table above.
-- [ ] `verify_token_compatibility` canary executed (strict 1–10 stroop
-      limits); `canary_verified()` is a hard prerequisite enforced by
-      `add_liquidity` before the first deposit.
-- [ ] Validated identities published for Backend / Core Engine / Frontend /
-      Mobile.
-- [ ] Issuer clawback/freeze implications surfaced in product UI.
+      match the table above (deploy-time).
+- [ ] `verify_token_compatibility` canary executed on the target network
+      (deploy-time).
+- [ ] Issuer clawback/freeze implications surfaced in product UI
+      (product follow-up).

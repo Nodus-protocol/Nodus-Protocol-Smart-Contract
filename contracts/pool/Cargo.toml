@@ -18,3 +18,4 @@ soroban-sdk = { workspace = true }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 nodus-protocol-lp-token = { path = "../lp-token", features = ["testutils"] }
+serde_json = "1.0"

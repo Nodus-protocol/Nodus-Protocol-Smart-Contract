@@ -1,0 +1,51 @@
+{
+  "$schema": "canonical-assets.schema.json",
+  "version": 1,
+  "network": "mainnet",
+  "network_independent": "SAC addresses are derived from the asset definition via CAP-46-3 (Env::deployer().with_stellar_asset(xdr).deployed_address()), so they are the same on every network for these asset definitions.",
+  "derivation": "CAP-46-3 get_asset_contract_id",
+  "pool_ordering_policy": "token_0 is always native XLM; token_1 is always Circle USDC. Reversed or unknown pairs are rejected at initialization (ENFORCED on-chain).",
+  "identity_proof": "The pool identity proof is derived-address pinning: the supplied SAC address must equal the address derived on-chain from the reviewed asset definition. symbol/name/decimals are defense-in-depth only, never the proof. A tampered/upgraded implementation still living at the pinned address is caught by the post-deploy transfer/allowance canary (verify_token_compatibility), required before the first deposit.",
+  "tokens": [
+    {
+      "role": "token_0",
+      "asset": "native XLM",
+      "asset_kind": "native",
+      "asset_xdr_hex": "00000000",
+      "sac_address": "CB56OQJZFJXSSKFK3MXJZ4TLJAJFWH6KXN6BAWHQSJDZPHZFVBJ353HU",
+      "name": "native",
+      "symbol": "native",
+      "decimals": 7,
+      "issuer": null,
+      "clawback": false,
+      "freeze_authorization": false
+    },
+    {
+      "role": "token_1",
+      "asset": "Circle USD Coin (USDC)",
+      "asset_kind": "credit_alphanum4",
+      "asset_xdr_hex": "0000000155534443000000003b9911380efe988ba0a8900eb1cfe44f366f7dbe946bed077240f7f624df15c5",
+      "sac_address": "CCAGPNTODUR2Z3JHN26WFINU3GUB3PIXBVQJIFN54CKZ3XWTGDJSSACA",
+      "name": "USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+      "symbol": "USDC",
+      "decimals": 7,
+      "issuer": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+      "clawback": true,
+      "freeze_authorization": true
+    }
+  ],
+  "canary": {
+    "entrypoint": "verify_token_compatibility",
+    "amount_min_stroops": 1,
+    "amount_max_stroops": 10,
+    "activation_gate": "add_liquidity refuses the first deposit (Error::CanaryNotCompleted) until the canary passes",
+    "notes": "Proves approve / transfer_from / transfer work end-to-end for each pool token with a strict round trip; catches fee-on-transfer, silently dropped/partial transfers, and broken authorization."
+  },
+  "release_status": {
+    "asset_definitions_reviewed": true,
+    "sac_addresses_pinned": true,
+    "addresses_confirmed_on_live_mainnet": false,
+    "canary_executed_on_mainnet": false,
+    "ready_for_consumers": true
+  }
+}

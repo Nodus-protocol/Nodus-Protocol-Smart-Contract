@@ -194,6 +194,23 @@ mod tests {
     use super::*;
     use soroban_sdk::xdr::ToXdr;
 
+    /// True if `bytes` equals the supplied lowercase hex string.
+    fn eq_hex(bytes: &[u8], hex: &str) -> bool {
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+        if bytes.len() * 2 != hex.len() {
+            return false;
+        }
+        for (i, b) in bytes.iter().enumerate() {
+            let hi = DIGITS[(b >> 4) as usize] as char;
+            let lo = DIGITS[(b & 0x0f) as usize] as char;
+            let hex_chars = hex.as_bytes();
+            if (hex_chars[2 * i] as char) != hi || (hex_chars[2 * i + 1] as char) != lo {
+                return false;
+            }
+        }
+        true
+    }
+
     #[test]
     fn usdc_issuer_strkey_matches_raw_pubkey() {
         let env = Env::default();
@@ -250,5 +267,50 @@ mod tests {
         assert_eq!(buf, USDC_ASSET_XDR.to_vec());
         assert_eq!(USDC_ASSET_XDR.len(), 44);
         assert_eq!(XLM_ASSET_XDR.len(), 4);
+    }
+
+    /// The published release artifact (`docs/canonical-assets.json`, the
+    /// machine-readable identities Backend / Core Engine / Frontend /
+    /// Mobile consume) must never drift from the contract-side constants.
+    /// Loaded via `include_str!` at compile time so a mismatch fails the
+    /// regression suite.
+    #[test]
+    fn published_release_artifact_matches_contract_constants() {
+        let json = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/canonical-assets.json"
+        ));
+        let v: serde_json::Value =
+            serde_json::from_str(json).expect("docs/canonical-assets.json must be valid JSON");
+
+        assert_eq!(v["version"], 1);
+        assert_eq!(v["tokens"][0]["role"], "token_0");
+        assert_eq!(v["tokens"][0]["asset"], "native XLM");
+        assert_eq!(v["tokens"][0]["sac_address"], XLM_SAC_ADDRESS);
+        assert_eq!(v["tokens"][0]["name"], XLM_NAME);
+        assert_eq!(v["tokens"][0]["symbol"], XLM_SYMBOL);
+        assert_eq!(v["tokens"][0]["decimals"], XLM_DECIMALS);
+        assert!(
+            eq_hex(
+                &XLM_ASSET_XDR,
+                v["tokens"][0]["asset_xdr_hex"].as_str().unwrap()
+            ),
+            "XLM asset_xdr_hex must match the reviewed definition"
+        );
+
+        assert_eq!(v["tokens"][1]["role"], "token_1");
+        assert_eq!(v["tokens"][1]["asset"], "Circle USD Coin (USDC)");
+        assert_eq!(v["tokens"][1]["sac_address"], USDC_SAC_ADDRESS);
+        assert_eq!(v["tokens"][1]["name"], USDC_NAME);
+        assert_eq!(v["tokens"][1]["symbol"], USDC_SYMBOL);
+        assert_eq!(v["tokens"][1]["decimals"], USDC_DECIMALS);
+        assert_eq!(v["tokens"][1]["issuer"], USDC_ISSUER_G);
+        assert!(
+            eq_hex(
+                &USDC_ASSET_XDR,
+                v["tokens"][1]["asset_xdr_hex"].as_str().unwrap()
+            ),
+            "USDC asset_xdr_hex must match the reviewed definition"
+        );
     }
 }
