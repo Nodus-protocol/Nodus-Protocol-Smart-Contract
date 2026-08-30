@@ -29,4 +29,11 @@ pub enum Error {
     NotTokenContract = 19,
     /// The token reports decimals that differ from its canonical asset policy.
     WrongDecimals = 20,
+    /// The post-deploy transfer/allowance canary amount is outside the
+    /// permitted strict limits.
+    InvalidCanaryAmount = 21,
+    /// A post-deploy transfer/allowance compatibility check failed: one of
+    /// the pool tokens did not behave as expected (transfer/transfer_from/
+    /// approve reverted, or balances did not move exactly as requested).
+    TokenCompatibilityFailed = 22,
 }
