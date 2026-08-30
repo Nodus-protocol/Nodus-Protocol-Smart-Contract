@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Nodus-protocol/Nodus-Protocol-Smart-Contract/blob/main/docs/canonical-assets.schema.json",
+  "title": "Nodus v1 Canonical Asset Registry",
+  "description": "Validates docs/canonical-assets.json, the machine-readable release artifact pinning the canonical XLM/USDC Stellar Asset Contract identities (issue #122).",
+  "type": "object",
+  "required": [
+    "version",
+    "network",
+    "tokens",
+    "canary",
+    "release_status"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of the artifact format; must match the contract's pinned constants."
+    },
+    "network": {
+      "type": "string",
+      "enum": ["mainnet", "testnet"]
+    },
+    "network_independent": {
+      "type": "string"
+    },
+    "derivation": {
+      "type": "string"
+    },
+    "pool_ordering_policy": {
+      "type": "string"
+    },
+    "identity_proof": {
+      "type": "string"
+    },
+    "tokens": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "role",
+          "asset",
+          "asset_kind",
+          "asset_xdr_hex",
+          "sac_address",
+          "name",
+          "symbol",
+          "decimals",
+          "issuer",
+          "clawback",
+          "freeze_authorization"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["token_0", "token_1"]
+          },
+          "asset": {
+            "type": "string"
+          },
+          "asset_kind": {
+            "type": "string",
+            "enum": ["native", "credit_alphanum4"]
+          },
+          "asset_xdr_hex": {
+            "type": "string",
+            "pattern": "^[0-9a-f]+$",
+            "description": "Serialized stellar asset definition (DEX), hex-encoded; the SAC address is derived from this via CAP-46-3."
+          },
+          "sac_address": {
+            "type": "string",
+            "pattern": "^C[A-Z2-7]{55}$",
+            "description": "Strkey C-address of the Stellar Asset Contract derived from asset_xdr_hex."
+          },
+          "name": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "decimals": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "issuer": {
+            "type": ["string", "null"]
+          },
+          "clawback": {
+            "type": "boolean"
+          },
+          "freeze_authorization": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "canary": {
+      "type": "object",
+      "required": [
+        "entrypoint",
+        "amount_min_stroops",
+        "amount_max_stroops",
+        "activation_gate"
+      ],
+      "properties": {
+        "entrypoint": {
+          "type": "string"
+        },
+        "amount_min_stroops": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "amount_max_stroops": {
+          "type": "integer"
+        },
+        "activation_gate": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "release_status": {
+      "type": "object",
+      "required": [
+        "asset_definitions_reviewed",
+        "sac_addresses_pinned",
+        "addresses_confirmed_on_live_mainnet",
+        "canary_executed_on_mainnet",
+        "ready_for_consumers"
+      ],
+      "properties": {
+        "asset_definitions_reviewed": {"type": "boolean"},
+        "sac_addresses_pinned": {"type": "boolean"},
+        "addresses_confirmed_on_live_mainnet": {"type": "boolean"},
+        "canary_executed_on_mainnet": {"type": "boolean"},
+        "ready_for_consumers": {"type": "boolean"}
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -41,7 +41,9 @@ The validated identities above are also published in
 [`docs/canonical-assets.json`](./canonical-assets.json) — the
 machine-readable registry Backend / Core Engine / Frontend / Mobile should
 pin (asset XDR, SAC address, name/symbol/decimals, issuer, and issuer
-clawback/freeze capabilities, plus the canary limits). The contract's own
+clawback/freeze capabilities, plus the canary limits). The published
+artifact is described and validated by its
+[`canonical-assets.schema.json`](./canonical-assets.schema.json) schema. The contract's own
 [`registry.rs`](../contracts/pool/src/registry.rs) is the source of truth,
 and a regression test
 (`published_release_artifact_matches_contract_constants`) fails if the JSON
