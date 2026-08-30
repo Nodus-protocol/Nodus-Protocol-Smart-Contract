@@ -96,7 +96,7 @@ contracts/
 
 | Function | Auth | Description |
 |----------|------|-------------|
-| `initialize(token_0, token_1, fee_to_setter, lp_token)` | — | One-time setup. `lp_token` must already be a deployed, uninitialized `nodus-protocol-lp-token` instance — this contract never deploys or initializes it itself; that's the factory's job (planned). |
+| `initialize(token_0, token_1, fee_to_setter, lp_token)` | — | One-time setup. `lp_token` must already be a deployed, uninitialized `nodus-protocol-lp-token` instance — this contract never deploys or initializes it itself; that's the factory's job (planned). The token pair is pinned: `token_0` must be the canonical XLM Stellar Asset Contract and `token_1` the canonical USDC Stellar Asset Contract, in that order. Each side is verified on-chain (SEP-41 interface, canonical `name`/`symbol`/`decimals`, zero balance at the pool) before the pool becomes active; reversed, unknown, impostor, or wrong-decimals pairs are rejected. See [Canonical assets](#canonical-assets) and `docs/canonical-assets.md`. |
 | `sync()` | — | Reconcile reserves with actual contract token balances. |
 
 ### Liquidity
@@ -211,6 +211,28 @@ initialized with it), then initializes the pool. `LP_TOKEN_NAME` /
 This is manual, one-pair-at-a-time tooling. The planned factory contract
 will do this deployment + wiring on-chain, for any token pair, without a
 human running a script per pool.
+
+---
+
+## Canonical assets
+
+The v1 pool is pinned to one reviewed pair: XLM (native Stellar) as
+`token_0` and Circle's USDC on Stellar as `token_1`, both with 7 decimals
+and canonical SEP-41 metadata defined in `contracts/pool/src/registry.rs`.
+`initialize` verifies each side on-chain — the contract must speak SEP-41,
+report the canonical `name`/`symbol`/`decimals`, and hold a zero balance at
+the pool — and rejects reversed/unknown/impostor/wrong-decimals pairs
+before any state is written (issue #122). Activation emits a registry event
+(`v1_reg`) exposing the canonical identities and pinned contract addresses
+for off-chain consumers.
+
+Symbol/name/decimals are necessary but not sufficient proof of identity:
+on-chain code-hash fingerprinting is not exposed by Soroban 26, so the
+reviewed canonical SAC **addresses** must additionally be pinned in deploy
+tooling and cross-checked off-chain. See
+[`docs/canonical-assets.md`](docs/canonical-assets.md) for the full
+verification model, the issuer clawback/freeze implications of holding
+USDC, and the post-deploy transfer/allowance canary.
 
 ---
 

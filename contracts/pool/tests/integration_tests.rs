@@ -1,20 +1,41 @@
 #[cfg(test)]
 #[cfg(feature = "testutils")]
 mod integration {
-    use nodus_protocol_amm::{NodusAmm, NodusAmmClient};
+    use nodus_protocol_amm::{registry, NodusAmm, NodusAmmClient};
     use nodus_protocol_lp_token::{NodusLpToken, NodusLpTokenClient};
     use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
-        Address, Env, String,
+        testutils::{Address as _, Events as _, Ledger as _},
+        xdr::ContractEventBody,
+        Address, Env, String, TryFromVal,
     };
+
+    /// Deploys and initializes two SEP-41 token contracts whose metadata
+    /// matches the canonical XLM/USDC policy (the stand-in for the real
+    /// XLM and USDC Stellar Asset Contracts).
+    fn deploy_canonical_pair(env: &Env) -> (Address, Address) {
+        let xlm = env.register(NodusLpToken, ());
+        let usdc = env.register(NodusLpToken, ());
+        NodusLpTokenClient::new(env, &xlm).initialize(
+            &Address::generate(env),
+            &String::from_str(env, registry::XLM_NAME),
+            &String::from_str(env, registry::XLM_SYMBOL),
+            &registry::XLM_DECIMALS,
+        );
+        NodusLpTokenClient::new(env, &usdc).initialize(
+            &Address::generate(env),
+            &String::from_str(env, registry::USDC_NAME),
+            &String::from_str(env, registry::USDC_SYMBOL),
+            &registry::USDC_DECIMALS,
+        );
+        (xlm, usdc)
+    }
 
     fn setup_initialized() -> (Env, Address, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
         let contract = env.register(NodusAmm, ());
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
+        let (t0, t1) = deploy_canonical_pair(&env);
         let admin = Address::generate(&env);
         let lp_token = Address::generate(&env);
         client.initialize(&t0, &t1, &admin, &lp_token);
@@ -84,12 +105,45 @@ mod integration {
         env.mock_all_auths();
         let contract = env.register(NodusAmm, ());
         let client = NodusAmmClient::new(&env, &contract);
-        let t0 = Address::generate(&env);
-        let t1 = Address::generate(&env);
+        let (t0, t1) = deploy_canonical_pair(&env);
         let admin = Address::generate(&env);
         let lp_token = Address::generate(&env);
         client.initialize(&t0, &t1, &admin, &lp_token);
         (env, contract, admin)
+    }
+
+    /// Activation must expose the canonical asset identities and pinned
+    /// contract addresses through a pool-attributable registry event, so
+    /// off-chain consumers can trust the pair without re-deriving it.
+    #[test]
+    fn initialize_emits_activation_event_with_canonical_identities() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register(NodusAmm, ());
+        let client = NodusAmmClient::new(&env, &contract);
+        let (xlm, usdc) = deploy_canonical_pair(&env);
+        let admin = Address::generate(&env);
+        let lp_token = Address::generate(&env);
+
+        client.initialize(&xlm, &usdc, &admin, &lp_token);
+
+        let filtered = env.events().all().filter_by_contract(&contract);
+        let events = filtered.events();
+        assert_eq!(events.len(), 1, "activation must emit exactly one event");
+        let ContractEventBody::V0(v0) = &events[0].body;
+        let data = &v0.data;
+        let activated: nodus_protocol_amm::events::PoolActivatedEvent =
+            nodus_protocol_amm::events::PoolActivatedEvent::try_from_val(&env, data).unwrap();
+        assert_eq!(activated.token_0, xlm);
+        assert_eq!(activated.token_1, usdc);
+        assert_eq!(
+            activated.canonical_symbol_0,
+            String::from_str(&env, registry::XLM_SYMBOL)
+        );
+        assert_eq!(
+            activated.canonical_symbol_1,
+            String::from_str(&env, registry::USDC_SYMBOL)
+        );
     }
 
     #[test]
@@ -216,10 +270,9 @@ mod integration {
     #[test]
     fn sync_is_not_blocked_by_pause() {
         // sync() deliberately has no pause guard since it only reconciles
-        // reserves and never moves funds. It still fails here because t0/t1
-        // are bare addresses rather than deployed token contracts, but the
-        // failure must not be ContractPaused -- proving pause isn't what
-        // stopped it.
+        // reserves and never moves funds; it runs (and succeeds) even while
+        // paused. The assertion pins that it is not ContractPaused that
+        // stops it.
         let (env, contract, admin) = setup_initialized_with_admin();
         let client = NodusAmmClient::new(&env, &contract);
         client.pause(&admin);
@@ -262,16 +315,16 @@ mod integration {
         let t0_client = NodusLpTokenClient::new(&env, &token_0);
         t0_client.initialize(
             &mint_authority,
-            &String::from_str(&env, "Token0"),
-            &String::from_str(&env, "TOK0"),
-            &7,
+            &String::from_str(&env, registry::XLM_NAME),
+            &String::from_str(&env, registry::XLM_SYMBOL),
+            &registry::XLM_DECIMALS,
         );
         let t1_client = NodusLpTokenClient::new(&env, &token_1);
         t1_client.initialize(
             &mint_authority,
-            &String::from_str(&env, "Token1"),
-            &String::from_str(&env, "TOK1"),
-            &7,
+            &String::from_str(&env, registry::USDC_NAME),
+            &String::from_str(&env, registry::USDC_SYMBOL),
+            &registry::USDC_DECIMALS,
         );
 
         // Give the liquidity provider tokens to deposit, and have them

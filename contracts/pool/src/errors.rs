@@ -21,4 +21,12 @@ pub enum Error {
     SlippageTooHigh = 15,
     Unauthorized = 16,
     ContractPaused = 17,
+    /// The token is not a member of the accepted canonical asset set (wrong
+    /// symbol/name, or a reversed/unknown pair at initialization).
+    UnsupportedAsset = 18,
+    /// The address does not behave like a live SEP-41 token contract (not a
+    /// contract at all, not initialized, or reverting metadata/balance calls).
+    NotTokenContract = 19,
+    /// The token reports decimals that differ from its canonical asset policy.
+    WrongDecimals = 20,
 }

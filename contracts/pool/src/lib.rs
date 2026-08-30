@@ -1,11 +1,12 @@
 #![no_std]
 #![allow(clippy::too_many_arguments)]
-use soroban_sdk::{contract, contractimpl, token::Client as TokenClient, Address, Env};
+use soroban_sdk::{contract, contractimpl, token::Client as TokenClient, Address, Env, String};
 
 pub mod errors;
 pub mod events;
 pub mod liquidity_pool;
 pub mod math;
+pub mod registry;
 pub mod storage;
 pub mod traits;
 
@@ -183,6 +184,17 @@ impl NodusAmm {
     /// nodus-protocol-lp-token instance; the factory is responsible for
     /// deploying it and handing its address here. This contract never
     /// deploys or initializes the LP token itself.
+    ///
+    /// The token pair is not free-form: `token_0` must be the canonical
+    /// XLM Stellar Asset Contract and `token_1` the canonical USDC Stellar
+    /// Asset Contract, in that pinned order (see [`registry`]). Each side
+    /// is verified on-chain before any state is written — the contract must
+    /// speak SEP-41, report the reviewed canonical metadata and decimals,
+    /// and report a zero balance at the pool address. This rejects
+    /// same-symbol impostors, incompatible contracts, wrong-decimals
+    /// tokens, reversed pairs, and unknown assets at initialization
+    /// (issue #122). On success an activation event exposes the canonical
+    /// asset identities and contract addresses.
     pub fn initialize(
         env: Env,
         token_0: Address,
@@ -201,6 +213,20 @@ impl NodusAmm {
         if token_0 == token_1 {
             return Err(Error::InvalidTokenPair);
         }
+        registry::verify_canonical_token(
+            &env,
+            &token_0,
+            registry::XLM_NAME,
+            registry::XLM_SYMBOL,
+            registry::XLM_DECIMALS,
+        )?;
+        registry::verify_canonical_token(
+            &env,
+            &token_1,
+            registry::USDC_NAME,
+            registry::USDC_SYMBOL,
+            registry::USDC_DECIMALS,
+        )?;
         env.storage().instance().set(&DataKey::Token0, &token_0);
         env.storage().instance().set(&DataKey::Token1, &token_1);
         env.storage().instance().set(&DataKey::LpToken, &lp_token);
@@ -211,6 +237,13 @@ impl NodusAmm {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_BUMP);
+        events::emit_pool_activated(
+            &env,
+            token_0,
+            token_1,
+            String::from_str(&env, registry::XLM_SYMBOL),
+            String::from_str(&env, registry::USDC_SYMBOL),
+        );
         Ok(())
     }
 
@@ -659,7 +692,7 @@ impl NodusAmm {
     // ── Protocol fee collector ──────────────────────────────────────────────
 
     /// Sets the recipient of the protocol fee.
-    /// 
+    ///
     /// # Important
     /// Protocol fee collection is currently **not implemented** in the pool.
     /// This is a reserved administrative endpoint; setting this value updates the configuration
@@ -682,7 +715,7 @@ impl NodusAmm {
     }
 
     /// Returns the protocol fee recipient address, if configured.
-    /// 
+    ///
     /// # Important
     /// Protocol fee collection is currently **not implemented** in the pool.
     /// This function is non-functional/inert and is only a configuration query.

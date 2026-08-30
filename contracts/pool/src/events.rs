@@ -1,5 +1,5 @@
 #![allow(deprecated)]
-use soroban_sdk::{contracttype, symbol_short, Address, Env};
+use soroban_sdk::{contracttype, symbol_short, Address, Env, String};
 
 #[contracttype]
 pub struct MintEvent {
@@ -40,6 +40,18 @@ pub struct PausedEvent {
 #[contracttype]
 pub struct UnpausedEvent {
     pub caller: Address,
+}
+
+/// Emitted once when a pool becomes active, exposing the canonical asset
+/// identities (symbols) and the pinned SAC contract addresses so off-chain
+/// consumers (Backend, Core Engine, Frontend, Mobile) can trust the pair
+/// without re-deriving it. See `docs/canonical-assets.md`.
+#[contracttype]
+pub struct PoolActivatedEvent {
+    pub token_0: Address,
+    pub token_1: Address,
+    pub canonical_symbol_0: String,
+    pub canonical_symbol_1: String,
 }
 
 /// Emits a mint event.
@@ -136,6 +148,26 @@ pub fn emit_unpaused(env: &Env, caller: Address) {
     );
 }
 
+/// Emits the pool-activation (registry) event. See [`emit_mint`] for the
+/// multi-pool indexing rationale.
+pub fn emit_pool_activated(
+    env: &Env,
+    token_0: Address,
+    token_1: Address,
+    canonical_symbol_0: String,
+    canonical_symbol_1: String,
+) {
+    env.events().publish(
+        (symbol_short!("v1_reg"), env.current_contract_address()),
+        PoolActivatedEvent {
+            token_0,
+            token_1,
+            canonical_symbol_0,
+            canonical_symbol_1,
+        },
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +237,30 @@ mod tests {
 
         let filtered = env.events().all().filter_by_contract(&contract_id);
         assert_eq!(filtered.events().len(), 1);
+    }
+
+    #[test]
+    fn pool_activated_event_is_attributable_to_contract() {
+        let (env, contract_id) = setup_env_and_contract();
+        let token_0 = Address::generate(&env);
+        let token_1 = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            emit_pool_activated(
+                &env,
+                token_0.clone(),
+                token_1.clone(),
+                String::from_str(&env, "XLM"),
+                String::from_str(&env, "USDC"),
+            );
+        });
+
+        let filtered = env.events().all().filter_by_contract(&contract_id);
+        assert_eq!(
+            filtered.events().len(),
+            1,
+            "exactly one event must be attributable to the emitting contract"
+        );
     }
 
     /// Multi-pool indexing test: deploy two separate instances of the contract
